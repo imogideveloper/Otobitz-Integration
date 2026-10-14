@@ -99,8 +99,7 @@ required_apps = ["frappe/erpnext"]
 # To set up dependencies/integrations with other apps
 # Name of the app being installed is passed as an argument
 
-# before_app_install = "otobitz_integration.utils.before_app_install"
-# after_app_install = "otobitz_integration.utils.after_app_install"
+after_app_install = "otobitz_integration.install.after_app_install"
 
 # Integration Cleanup
 # -------------------
