@@ -157,7 +157,7 @@ required_apps = ["frappe/erpnext"]
 
 scheduler_events = {
 	"hourly_long": [
-		"otobitz_integration.otobitz_integration.sync.orchestrator.run_hourly_sync",
+		"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_hourly_sync",
 	],
 }
 

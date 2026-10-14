@@ -65,6 +65,24 @@ SYNC_STEPS = [
 ]
 
 
+def trigger_hourly_sync():
+	"""Scheduler entrypoint for hooks.py's scheduler_events["hourly_long"].
+
+	Enqueues run_hourly_sync with an explicit timeout instead of letting it
+	run directly under whatever default timeout Frappe's scheduler assigns
+	the "long" queue (1500s) - real OtoBitz endpoints (otoxpertsoandpart in
+	particular) can take longer than that when the upstream API is slow.
+	Shares job_id with sync_now()'s manual enqueue so the two can't overlap.
+	"""
+	frappe.enqueue(
+		"otobitz_integration.otobitz_integration.sync.orchestrator.run_hourly_sync",
+		queue="long",
+		timeout=3600,
+		job_id="otobitz_hourly_sync",
+		deduplicate=True,
+	)
+
+
 def run_hourly_sync():
 	if not acquire_sync_lock():
 		frappe.logger("otobitz_integration").info("Hourly sync already in progress, skipping this tick.")

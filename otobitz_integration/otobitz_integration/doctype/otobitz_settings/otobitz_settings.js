@@ -27,8 +27,6 @@ function render_otobitz_dashboard(frm, data) {
 
 frappe.ui.form.on("OtoBitz Settings", {
 	refresh(frm) {
-		if (!frm.doc.enabled) return;
-
 		frm.call("get_dashboard_summary").then((r) => r.message && render_otobitz_dashboard(frm, r.message));
 
 		frm.add_custom_button(__("Sync Now"), () => frm.call("sync_now").then(() => frm.reload_doc()));

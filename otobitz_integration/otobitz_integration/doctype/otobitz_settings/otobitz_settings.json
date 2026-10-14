@@ -35,7 +35,6 @@
    "label": "Enabled"
   },
   {
-   "depends_on": "enabled",
    "fieldname": "default_company",
    "fieldtype": "Link",
    "label": "Default Company",
@@ -43,25 +42,21 @@
    "options": "Company"
   },
   {
-   "depends_on": "enabled",
    "fieldname": "section_break_dashboard",
    "fieldtype": "Section Break",
    "label": "Ringkasan OtoBitz"
   },
   {
-   "depends_on": "enabled",
    "fieldname": "dashboard_html",
    "fieldtype": "HTML"
   },
   {
-   "depends_on": "enabled",
    "fieldname": "section_break_conn",
    "fieldtype": "Section Break",
    "label": "OtoBitz Connection"
   },
   {
    "default": "https://otoxpert-apps.toyota.astra.co.id",
-   "depends_on": "enabled",
    "fieldname": "base_url",
    "fieldtype": "Data",
    "label": "Base URL",
@@ -72,14 +67,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "enabled",
    "fieldname": "username",
    "fieldtype": "Data",
    "label": "Username",
    "mandatory_depends_on": "enabled"
   },
   {
-   "depends_on": "enabled",
    "fieldname": "password",
    "fieldtype": "Password",
    "label": "Password",
@@ -150,13 +143,11 @@
    "description": "Watermark for masterdata_orderpekerjaanluar's incremental date-window sync."
   },
   {
-   "depends_on": "enabled",
    "fieldname": "section_break_lookup",
    "fieldtype": "Section Break",
    "label": "Look Up a Work Order"
   },
   {
-   "depends_on": "enabled",
    "description": "Fetch and sync exactly this one Work Order right now, instead of waiting for the next hourly run.",
    "fieldname": "lookup_wo_number",
    "fieldtype": "Data",
