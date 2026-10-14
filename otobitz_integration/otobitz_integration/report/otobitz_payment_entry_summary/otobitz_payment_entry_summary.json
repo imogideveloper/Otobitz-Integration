@@ -1,0 +1,27 @@
+{
+ "add_total_row": 0,
+ "columns": [],
+ "disable_prepared_report": 1,
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "is_standard": "Yes",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz Payment Entry Summary",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Payment Entry",
+ "report_name": "OtoBitz Payment Entry Summary",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "System Manager"
+  }
+ ]
+}

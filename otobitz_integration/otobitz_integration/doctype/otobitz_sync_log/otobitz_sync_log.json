@@ -1,0 +1,135 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-29 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "endpoint",
+  "status",
+  "column_break_meta",
+  "started_at",
+  "ended_at",
+  "section_break_counts",
+  "records_fetched",
+  "column_break_counts",
+  "records_created",
+  "records_updated",
+  "records_failed",
+  "section_break_trace",
+  "traceback"
+ ],
+ "fields": [
+  {
+   "fieldname": "endpoint",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Endpoint",
+   "read_only": 1
+  },
+  {
+   "default": "Success",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Success\nPartial\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_counts",
+   "fieldtype": "Section Break",
+   "label": "Counts"
+  },
+  {
+   "default": "0",
+   "fieldname": "records_fetched",
+   "fieldtype": "Int",
+   "label": "Records Fetched",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_counts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "records_created",
+   "fieldtype": "Int",
+   "label": "Records Created",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "records_updated",
+   "fieldtype": "Int",
+   "label": "Records Updated",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "records_failed",
+   "fieldtype": "Int",
+   "label": "Records Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_trace",
+   "fieldtype": "Section Break",
+   "label": "Error"
+  },
+  {
+   "fieldname": "traceback",
+   "fieldtype": "Code",
+   "label": "Traceback",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "in_create": 1,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz Sync Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

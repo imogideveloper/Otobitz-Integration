@@ -1,0 +1,96 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-29 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "kode_model",
+  "namamodel",
+  "transmisi",
+  "kode_referensi",
+  "namaref",
+  "jenis",
+  "harga",
+  "qty",
+  "subtotal"
+ ],
+ "fields": [
+  {
+   "fieldname": "kode_model",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Kode Model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "namamodel",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Model",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transmisi",
+   "fieldtype": "Data",
+   "label": "Transmisi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kode_referensi",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Kode Referensi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "namaref",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Referensi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "jenis",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Jenis",
+   "read_only": 1
+  },
+  {
+   "fieldname": "harga",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Harga",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "subtotal",
+   "fieldtype": "Currency",
+   "label": "Subtotal",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-29 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz Service Menu Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

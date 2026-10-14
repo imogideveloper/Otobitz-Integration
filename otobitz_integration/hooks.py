@@ -8,7 +8,7 @@ app_license = "mit"
 # Apps
 # ------------------
 
-# required_apps = []
+required_apps = ["frappe/erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
@@ -155,23 +155,20 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"otobitz_integration.tasks.all"
-# 	],
-# 	"daily": [
-# 		"otobitz_integration.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"otobitz_integration.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"otobitz_integration.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"otobitz_integration.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"hourly_long": [
+		"otobitz_integration.otobitz_integration.sync.orchestrator.run_hourly_sync",
+	],
+}
+
+# Fixtures
+# --------
+
+fixtures = [
+	{"dt": "Custom Field", "filters": [["module", "=", "OtoBitz Integration"]]},
+	{"dt": "Property Setter", "filters": [["module", "=", "OtoBitz Integration"]]},
+	{"dt": "Client Script", "filters": [["module", "=", "OtoBitz Integration"]]},
+]
 
 # Testing
 # -------
