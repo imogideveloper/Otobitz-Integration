@@ -67,12 +67,14 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": "integrated_auto2000",
    "fieldname": "username",
    "fieldtype": "Data",
    "label": "Username",
    "mandatory_depends_on": "enabled"
   },
   {
+   "default": "auto2000",
    "fieldname": "password",
    "fieldtype": "Password",
    "label": "Password",
