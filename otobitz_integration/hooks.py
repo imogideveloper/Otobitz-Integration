@@ -147,6 +147,18 @@ doc_events = {
 	"Sales Order": {
 		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
 	},
+	"Purchase Order": {
+		"validate": "otobitz_integration.purchase_order.track",
+		"before_update_after_submit": "otobitz_integration.purchase_order.track"
+	},
+	"Payment Entry": {
+		"on_submit": "otobitz_integration.purchase_order.on_payment_entry",
+		"on_cancel": "otobitz_integration.purchase_order.on_payment_entry"
+	},
+	"Purchase Invoice": {
+		"on_submit": "otobitz_integration.purchase_order.on_purchase_invoice",
+		"on_cancel": "otobitz_integration.purchase_order.on_purchase_invoice"
+	}
 }
 
 # Scheduled Tasks
@@ -167,7 +179,7 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Client Script", "filters": [["module", "=", "OtoBitz Integration"]]},
-	{"dt": "List View Settings", "filters": [["name", "=", "Sales Order"]]},
+	{"dt": "List View Settings", "filters": [["name", "in", ["Sales Order", "Sales Invoice", "Payment Entry"]]]},
 ]
 
 # Testing

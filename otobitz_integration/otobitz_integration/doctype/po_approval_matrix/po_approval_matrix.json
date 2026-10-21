@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-10-20 14:24:02.416954",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sequence",
+  "role",
+  "analytic_tags",
+  "users",
+  "minimum_approval",
+  "minimum_amount",
+  "maximum_amount",
+  "approval_status",
+  "feedback",
+  "can_override"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "sequence",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sequence"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 2,
+   "fieldname": "role",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "Role"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "analytic_tags",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Analytic Tags"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "users",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Users"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "minimum_approval",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Minimum Approval"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "minimum_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Minimum Amount"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "maximum_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Maximum Amount"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "approval_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Approval Status"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "feedback",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Feedback"
+  },
+  {
+   "allow_on_submit": 1,
+   "columns": 1,
+   "default": "0",
+   "fieldname": "can_override",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Can Override"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-20 14:24:02.416954",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "PO Approval Matrix",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
