@@ -1,0 +1,17 @@
+[
+ {
+  "allow_edit": 0,
+  "disable_auto_refresh": 0,
+  "disable_automatic_recency_filters": 0,
+  "disable_comment_count": 1,
+  "disable_count": 0,
+  "disable_scrolling": 0,
+  "disable_sidebar_stats": 0,
+  "docstatus": 0,
+  "doctype": "List View Settings",
+  "fields": "[{\"fieldname\": \"transaction_date\", \"label\": \"Order Date\"}, {\"fieldname\": \"customer_name\", \"label\": \"Customer\"}, {\"fieldname\": \"custom_salesperson\", \"label\": \"Salesperson\"}, {\"fieldname\": \"company\", \"label\": \"Company\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"custom_payment_status\", \"label\": \"Invoice Status\"}, {\"fieldname\": \"custom_otobitz_so_number\", \"label\": \"Nomor SO OTO\"}, {\"fieldname\": \"custom_otobitz_faktur_number\", \"label\": \"Nomor Faktur OTO\"}]",
+  "modified": "2026-10-20 14:10:11.874834",
+  "name": "Sales Order",
+  "show_tags": 0
+ }
+]

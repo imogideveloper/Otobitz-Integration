@@ -143,13 +143,11 @@ after_app_install = "otobitz_integration.install.after_app_install"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Sales Order": {
+		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
+	},
+}
 
 # Scheduled Tasks
 # ---------------
@@ -160,6 +158,8 @@ scheduler_events = {
 	],
 }
 
+after_migrate = ["otobitz_integration.install.reapply_fixtures"]
+
 # Fixtures
 # --------
 
@@ -167,6 +167,7 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Client Script", "filters": [["module", "=", "OtoBitz Integration"]]},
+	{"dt": "List View Settings", "filters": [["name", "=", "Sales Order"]]},
 ]
 
 # Testing
