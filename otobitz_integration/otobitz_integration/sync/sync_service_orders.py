@@ -39,6 +39,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	clean_or_none,
 	get_or_create_vehicle,
+	log_so_detail_rows,
 	renew_sync_lock,
 	safe_name,
 	set_period_fields,
@@ -82,7 +83,7 @@ def _iter_date_chunks(start: str, end: str):
 def sync_service_orders() -> dict:
 	tanggalawal, tanggalakhir = get_sync_window()
 
-	fetched = created = updated = failed = 0
+	fetched = created = updated = failed = archived = 0
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
 		renew_sync_lock()
 		try:
@@ -94,6 +95,13 @@ def sync_service_orders() -> dict:
 
 		rows = response.get("data-so") or []
 		fetched += len(rows)
+
+		# Raw archive, independent of whatever happens below: every line item
+		# OtoBitz sent gets a row in OtoBitz SO Detail exactly as received, even
+		# one whose Work Order later gets skipped/cancelled/fails to sync as a
+		# real Sales Order - see log_so_detail_rows()'s docstring in common.py.
+		archived += log_so_detail_rows(rows)
+		frappe.db.commit()
 
 		groups = defaultdict(list)
 		for row in rows:
@@ -129,7 +137,7 @@ def sync_service_orders() -> dict:
 	frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
 	frappe.db.commit()
 
-	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}
+	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed, "archived": archived}
 
 
 def _sync_one_wo(nomorwo: str, wo_rows: list) -> bool:

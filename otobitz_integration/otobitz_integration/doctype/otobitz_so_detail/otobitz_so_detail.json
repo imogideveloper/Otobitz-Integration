@@ -1,0 +1,243 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-10-21 00:00:00.000000",
+ "description": "Arsip mentah 1:1 dari endpoint otoxpertsoandpart - 1 baris di sini = 1 baris persis seperti yang dikirim OtoBitz (1 item per baris, bukan digabung per WO seperti Sales Order). Terpisah dari Sales Order/Sales Invoice yang dibangun dari data ini - dokumen itu bisa berubah/dibatalkan, arsip ini tidak pernah disentuh ulang.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "dedup_key",
+  "section_break_wo",
+  "nomorwo",
+  "nofaktur",
+  "tanggal",
+  "statuswo",
+  "column_break_wo",
+  "kode_cabang",
+  "namacabang",
+  "teknisi",
+  "section_break_customer",
+  "customer_name",
+  "nopolisi",
+  "section_break_item",
+  "kodereferensi",
+  "namareferensi",
+  "jenisdoc",
+  "qty",
+  "column_break_item",
+  "harga",
+  "discperitem",
+  "subtotal",
+  "section_break_total",
+  "grandtotal",
+  "nilaipenerimaan",
+  "sisapiutang",
+  "section_break_raw",
+  "raw_data"
+ ],
+ "fields": [
+  {
+   "fieldname": "dedup_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Dedup Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "section_break_wo",
+   "fieldtype": "Section Break",
+   "label": "Work Order"
+  },
+  {
+   "fieldname": "nomorwo",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Nomor WO",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nofaktur",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "No. Faktur",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tanggal",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tanggal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "statuswo",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status WO",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_wo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "kode_cabang",
+   "fieldtype": "Data",
+   "label": "Kode Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "namacabang",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "teknisi",
+   "fieldtype": "Data",
+   "label": "Teknisi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_customer",
+   "fieldtype": "Section Break",
+   "label": "Customer & Kendaraan"
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nopolisi",
+   "fieldtype": "Data",
+   "label": "Nomor Polisi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_item",
+   "fieldtype": "Section Break",
+   "label": "Item"
+  },
+  {
+   "fieldname": "kodereferensi",
+   "fieldtype": "Data",
+   "label": "Kode Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "namareferensi",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "jenisdoc",
+   "fieldtype": "Data",
+   "label": "Jenis (Part/Jasa)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_item",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "harga",
+   "fieldtype": "Currency",
+   "label": "Harga Satuan",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discperitem",
+   "fieldtype": "Currency",
+   "label": "Diskon",
+   "read_only": 1
+  },
+  {
+   "fieldname": "subtotal",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Subtotal Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_total",
+   "fieldtype": "Section Break",
+   "label": "Total WO (diulang tiap baris)"
+  },
+  {
+   "fieldname": "grandtotal",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Grand Total WO",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nilaipenerimaan",
+   "fieldtype": "Currency",
+   "label": "Nilai Penerimaan",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sisapiutang",
+   "fieldtype": "Currency",
+   "label": "Sisa Piutang",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_raw",
+   "fieldtype": "Section Break",
+   "label": "Data Mentah (JSON, persis dari API)"
+  },
+  {
+   "fieldname": "raw_data",
+   "fieldtype": "Code",
+   "label": "Raw Data",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz SO Detail",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}
