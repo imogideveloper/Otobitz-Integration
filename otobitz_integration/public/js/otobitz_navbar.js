@@ -270,22 +270,31 @@
 	// Frappe already ships a real "Toggle Full Width" feature for exactly
 	// this (ui/toolbar/toolbar.js, persisted in
 	// localStorage.container_fullwidth) - reusing that native class instead
-	// of fighting it with a custom width override. Only toggled on while
-	// this Workspace route is active, and only removed again on the way out
-	// if *we* were the one who turned it on, so a user who already has
-	// their own "full width" preference set everywhere never gets it
-	// switched off by this page.
-	let addedFullWidth = false;
+	// of fighting it with a custom width override.
+	//
+	// On the way out, restored to the user's *actual* saved preference
+	// (the same localStorage key toolbar.js itself reads on every page
+	// load) rather than tracking "did this script add it" in a plain JS
+	// variable - that variable resets to false on every fresh page load,
+	// but the body class it was tracking doesn't reset until something
+	// explicitly changes it. Visit the workspace once, then reload or open
+	// a new page without passing back through this route in the same
+	// script execution, and a variable-based guard leaves full-width stuck
+	// on for every other page from then on (observed: stuck true on the
+	// Sales Invoice List View). Re-reading the real preference every time
+	// is correct regardless of how many page loads happened in between.
 	function syncFullWidth(on_workspace) {
 		if (on_workspace) {
-			if (!document.body.classList.contains("full-width")) {
-				document.body.classList.add("full-width");
-				addedFullWidth = true;
-			}
-		} else if (addedFullWidth) {
-			document.body.classList.remove("full-width");
-			addedFullWidth = false;
+			document.body.classList.add("full-width");
+			return;
 		}
+		let preferred = false;
+		try {
+			preferred = JSON.parse(localStorage.getItem("container_fullwidth") || "false");
+		} catch (e) {
+			preferred = false;
+		}
+		document.body.classList.toggle("full-width", preferred);
 	}
 
 	function buildHref(item) {
