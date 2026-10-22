@@ -33,7 +33,7 @@ required_apps = ["frappe/erpnext"]
 # within the SPA doesn't even re-run <script> tags, so only a hard refresh
 # would ever show a change, and a plain refresh could still serve the stale
 # cached copy. Bump this number (v=N) every time otobitz_navbar.js changes.
-app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=6"
+app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=12"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
@@ -51,7 +51,7 @@ app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=6"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {"OtoBitz Failed Sync": "public/js/otobitz_failed_sync_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 

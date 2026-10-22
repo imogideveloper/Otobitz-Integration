@@ -39,8 +39,11 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	clean_or_none,
 	get_or_create_vehicle,
+	log_failed_sync,
 	log_so_detail_rows,
+	mark_otobitz_cancelled,
 	renew_sync_lock,
+	resolve_failed_sync,
 	safe_name,
 	set_period_fields,
 	sync_so_payment_status,
@@ -125,9 +128,16 @@ def sync_service_orders() -> dict:
 				# sync logs to report e.g. "193 created" for a run that left
 				# 0 new Sales Orders in the database.
 				frappe.db.commit()
-			except Exception:
+				# In case this WO previously failed and is only succeeding
+				# now (whether via this normal pass or a manual retry from
+				# the OtoBitz Failed Sync queue) - see retry.py.
+				resolve_failed_sync("otoxpertsoandpart", nomorwo)
+				frappe.db.commit()
+			except Exception as exc:
 				frappe.db.rollback()
 				frappe.log_error(title=f"OtoBitz sync: failed to sync Work Order {nomorwo}")
+				log_failed_sync("otoxpertsoandpart", nomorwo, str(exc), wo_rows)
+				frappe.db.commit()
 				failed += 1
 
 		frappe.logger("otobitz_integration").info(
@@ -172,9 +182,11 @@ def _cancel_wo_documents(so_name: str) -> None:
 		si = frappe.get_doc("Sales Invoice", si_name)
 		if si.docstatus == 1:
 			si.cancel()
+			mark_otobitz_cancelled("Sales Invoice", si_name)
 	so = frappe.get_doc("Sales Order", so_name)
 	if so.docstatus == 1:
 		so.cancel()
+		mark_otobitz_cancelled("Sales Order", so_name)
 
 
 def _resolve_customer(header: dict) -> str | None:

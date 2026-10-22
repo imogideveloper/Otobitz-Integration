@@ -28,7 +28,10 @@ from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
+	log_failed_sync,
+	mark_otobitz_cancelled,
 	renew_sync_lock,
+	resolve_failed_sync,
 	set_period_fields,
 	sync_so_payment_status,
 )
@@ -87,9 +90,13 @@ def sync_penerimaan() -> dict:
 				# the exact bug that silently dropped hundreds of Sales
 				# Orders before it was caught (see sync_service_orders.py).
 				frappe.db.commit()
-			except Exception:
+				resolve_failed_sync("penerimaanuang", nomor)
+				frappe.db.commit()
+			except Exception as exc:
 				frappe.db.rollback()
 				frappe.log_error(title=f"OtoBitz sync: failed to sync receipt {nomor}")
+				log_failed_sync("penerimaanuang", nomor, str(exc), row)
+				frappe.db.commit()
 				failed += 1
 
 	frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
@@ -108,6 +115,7 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	if (row.get("status") or "").strip().lower() == "batal":
 		if existing and frappe.db.get_value("Payment Entry", existing, "docstatus") == 1:
 			frappe.get_doc("Payment Entry", existing).cancel()
+			mark_otobitz_cancelled("Payment Entry", existing)
 		return False
 
 	if existing:

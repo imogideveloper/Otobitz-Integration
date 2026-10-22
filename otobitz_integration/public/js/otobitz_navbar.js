@@ -37,6 +37,7 @@
 	const MENUS = [
 		{
 			label: "Transaksi",
+			icon: "receipt",
 			items: [
 				{
 					// Arsip mentah otoxpertsoandpart (1 baris = 1 item, apa
@@ -45,6 +46,7 @@
 					// sync_service_orders.py, tapi tabel ini sumbernya langsung
 					// dari arsip, bukan dari dokumen bisnis itu.
 					label: "Sales Order (WO)",
+					icon: "car",
 					doctype: "OtoBitz SO Detail",
 					filters: {},
 					embed: true,
@@ -52,27 +54,30 @@
 						["nomorwo", "Nomor WO"],
 						["namacabang", "Cabang"],
 						["tanggal", "Tanggal", "Date"],
-						["statuswo", "Status"],
+						["statuswo", "Status", "Status"],
 						["namareferensi", "Item"],
 						["grandtotal", "Total WO", "Currency"],
 					],
 				},
 				{
 					label: "Sales Invoice",
+					icon: "receipt-text",
 					doctype: "Sales Invoice",
 					filters: { custom_otobitz_wo_number: ["is", "set"] },
 					embed: true,
+					trackCancelSource: true,
 					columns: [
 						["custom_otobitz_wo_number", "Nomor WO"],
 						["custom_otobitz_nofaktur", "No. Faktur"],
 						["posting_date", "Tanggal", "Date"],
 						["due_date", "Jatuh Tempo", "Date"],
-						["status", "Status"],
+						["status", "Status", "Status"],
 						["grand_total", "Total", "Currency"],
 					],
 				},
 				{
 					label: "Payment Entry",
+					icon: "credit-card",
 					doctype: "Payment Entry",
 					filters: { custom_otobitz_receipt_number: ["is", "set"] },
 					embed: true,
@@ -87,6 +92,7 @@
 				},
 				{
 					label: "Journal Entry (Setoran)",
+					icon: "banknote",
 					doctype: "Journal Entry",
 					filters: { custom_otobitz_receipt_number: ["is", "set"] },
 					embed: true,
@@ -99,15 +105,17 @@
 				},
 				{
 					label: "Purchase Order",
+					icon: "truck",
 					doctype: "Purchase Order",
 					filters: { custom_otobitz_order_number: ["is", "set"] },
 					embed: true,
+					trackCancelSource: true,
 					columns: [
 						["custom_otobitz_order_number", "Nomor Order"],
 						["supplier", "Supplier"],
 						["custom_otobitz_branch", "Cabang"],
 						["transaction_date", "Tanggal", "Date"],
-						["status", "Status"],
+						["status", "Status", "Status"],
 						["grand_total", "Total", "Currency"],
 					],
 				},
@@ -115,54 +123,141 @@
 		},
 		{
 			label: "Setup / Master Data",
+			icon: "sliders-horizontal",
 			items: [
-				{ label: "Vehicle Category", doctype: "OtoBitz Vehicle Category" },
-				{ label: "Vehicle Type", doctype: "OtoBitz Vehicle Type" },
-				{ label: "Vehicle Color", doctype: "OtoBitz Vehicle Color" },
-				{ label: "Service Menu", doctype: "OtoBitz Service Menu" },
+				{ label: "Vehicle Category", icon: "layout-grid", doctype: "OtoBitz Vehicle Category" },
+				{ label: "Vehicle Type", icon: "car", doctype: "OtoBitz Vehicle Type" },
+				{ label: "Vehicle Color", icon: "palette", doctype: "OtoBitz Vehicle Color" },
+				{ label: "Service Menu", icon: "wrench", doctype: "OtoBitz Service Menu" },
 			],
 		},
 		{
 			label: "Laporan",
+			icon: "chart-column",
 			items: [
-				{ label: "Sales Order Summary", report: "OtoBitz Sales Order Summary" },
-				{ label: "Sales Invoice Summary", report: "OtoBitz Sales Invoice Summary" },
-				{ label: "Payment Entry Summary", report: "OtoBitz Payment Entry Summary" },
+				{ label: "Sales Order Summary", icon: "file-chart-column", report: "OtoBitz Sales Order Summary" },
+				{ label: "Sales Invoice Summary", icon: "file-chart-column", report: "OtoBitz Sales Invoice Summary" },
+				{ label: "Payment Entry Summary", icon: "file-chart-column", report: "OtoBitz Payment Entry Summary" },
 			],
 		},
 		{
 			label: "Pengaturan",
+			icon: "settings",
 			items: [
-				{ label: "OtoBitz Settings", route: ["otobitz-settings", "OtoBitz Settings"] },
-				{ label: "Sync Log", doctype: "OtoBitz Sync Log" },
+				{ label: "OtoBitz Settings", icon: "settings-2", route: ["otobitz-settings", "OtoBitz Settings"] },
+				{ label: "Sync Log", icon: "database", doctype: "OtoBitz Sync Log" },
+				{ label: "Job Queue (Gagal Sync)", icon: "refresh-cw", doctype: "OtoBitz Failed Sync" },
 			],
 		},
 	];
+
+	// Keyword -> Frappe indicator-pill color, checked in order against a
+	// lowercased status string. Covers the status vocabulary actually seen
+	// across Sales Order/Sales Invoice/Purchase Order (OtoBitz's own
+	// "FAKTUR", plus ERPNext's native Draft/Submitted/Paid/Overdue/...) -
+	// falls back to gray for anything unrecognized rather than guessing.
+	const STATUS_COLORS = [
+		[/cancel/, "red"],
+		[/overdue|unpaid|failed|reject/, "red"],
+		[/draft/, "gray"],
+		[/to\s*(invoice|bill|receive|deliver)|pending|open|partly/, "orange"],
+		[/faktur|paid|closed|completed|submitted|success/, "green"],
+	];
+	function statusColor(value) {
+		const v = String(value || "").toLowerCase();
+		for (const [re, color] of STATUS_COLORS) {
+			if (re.test(v)) return color;
+		}
+		return "gray";
+	}
+
+	// Frappe's own .icon/.icon-sm/.icon-xs classes set stroke/fill via
+	// --icon-stroke/--icon-fill custom properties rather than currentColor
+	// (apps/frappe/frappe/public/scss/common/icons.scss), so a plain CSS
+	// `color` on a parent element never actually recolors them, and
+	// different lucide glyphs end up looking inconsistently sized/heavy at
+	// the same class-based size (gak rapih in practice). Rendering the
+	// <svg> directly with explicit width/height and stroke="currentColor"
+	// sidesteps both problems: size is exact and uniform regardless of
+	// which icon, and `color: ...` on a CSS selector around it just works.
+	function icon(name, px) {
+		const size = px || 14;
+		return (
+			`<svg class="ob-ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
+			`stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" ` +
+			`style="flex-shrink:0;display:block;vertical-align:middle" aria-hidden="true"><use href="#icon-${name}"></use></svg>`
+		);
+	}
 
 	if (!document.getElementById("ob-nav-style")) {
 		const s = document.createElement("style");
 		s.id = "ob-nav-style";
 		s.textContent =
-			"#ob-navbar{display:flex;align-items:stretch;background:var(--fg-color);border:1px solid var(--border-color);border-radius:var(--border-radius);margin:0 0 14px;overflow:visible;box-shadow:var(--shadow-sm)}" +
+			// Navbar shell
+			"#ob-navbar{display:flex;align-items:stretch;background:var(--fg-color);border:1px solid var(--border-color);border-radius:10px;margin:0 0 16px;overflow:visible;box-shadow:var(--shadow-sm)}" +
 			".ob-nav-item{position:relative}" +
-			".ob-nav-btn{display:flex;align-items:center;gap:6px;padding:10px 16px;font-size:13px;font-weight:600;color:var(--text-color);cursor:pointer;user-select:none;border-right:1px solid var(--border-color);white-space:nowrap}" +
-			".ob-nav-item:last-child .ob-nav-btn{border-right:none}" +
+			".ob-nav-btn{display:flex;align-items:center;gap:7px;padding:12px 18px;font-size:13.5px;font-weight:600;color:var(--text-color);cursor:pointer;user-select:none;border-right:1px solid var(--border-color);white-space:nowrap;transition:background .12s ease,box-shadow .12s ease}" +
+			".ob-nav-item:first-child .ob-nav-btn{border-radius:10px 0 0 10px}" +
+			".ob-nav-item:last-child .ob-nav-btn{border-right:none;border-radius:0 10px 10px 0}" +
+			".ob-nav-btn .ob-ic{color:var(--text-muted);transition:color .12s ease}" +
 			".ob-nav-btn:hover,.ob-nav-item.ob-open .ob-nav-btn{background:var(--control-bg)}" +
-			".ob-nav-chevron{font-size:10px;color:var(--text-muted)}" +
-			".ob-nav-dd{display:none;position:absolute;top:100%;left:0;min-width:220px;background:var(--fg-color);border:1px solid var(--border-color);border-radius:var(--border-radius);box-shadow:var(--shadow-md);z-index:999;padding:6px 0;margin-top:4px}" +
-			".ob-nav-item.ob-open .ob-nav-dd{display:block}" +
-			".ob-nav-dd a,.ob-nav-dd .ob-nav-dd-link{display:block;padding:8px 14px;font-size:13px;color:var(--text-color);text-decoration:none;cursor:pointer}" +
+			".ob-nav-btn:hover .ob-ic,.ob-nav-item.ob-open .ob-nav-btn .ob-ic{color:var(--text-color)}" +
+			".ob-nav-item.ob-open .ob-nav-btn{box-shadow:inset 0 -2px 0 var(--blue-500,#2490ef)}" +
+			".ob-nav-chevron{display:flex;color:var(--text-muted);transition:transform .15s ease}" +
+			".ob-nav-item.ob-open .ob-nav-chevron{transform:rotate(180deg)}" +
+			// Dropdown
+			".ob-nav-dd{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:240px;background:var(--fg-color);border:1px solid var(--border-color);border-radius:10px;box-shadow:var(--shadow-lg,0 8px 24px rgba(0,0,0,.14));z-index:999;padding:6px;margin-top:0}" +
+			".ob-nav-item.ob-open .ob-nav-dd{display:block;animation:ob-dd-in .12s ease}" +
+			"@keyframes ob-dd-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}" +
+			".ob-nav-dd a,.ob-nav-dd .ob-nav-dd-link{display:flex;align-items:center;gap:10px;padding:9px 10px;font-size:13px;font-weight:500;color:var(--text-color);text-decoration:none;cursor:pointer;border-radius:7px;transition:background .1s ease}" +
+			".ob-nav-dd a .ob-ic,.ob-nav-dd-link .ob-ic{color:var(--text-muted);flex-shrink:0}" +
 			".ob-nav-dd a:hover,.ob-nav-dd .ob-nav-dd-link:hover{background:var(--control-bg);color:var(--text-color)}" +
-			"#ob-content-area{border:1px solid var(--border-color);border-radius:var(--border-radius);padding:14px;margin-bottom:16px}" +
-			"#ob-content-area table{width:100%;border-collapse:collapse}" +
-			"#ob-content-area th{padding:8px 12px;font-size:12px;color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border-color);white-space:nowrap}" +
-			"#ob-content-area td{padding:8px 12px;font-size:13px;border-top:1px solid var(--border-color);white-space:nowrap}" +
-			"#ob-content-area tbody tr{cursor:pointer}" +
-			"#ob-content-area tbody tr:hover{background:var(--control-bg)}" +
+			".ob-nav-dd-link.ob-active{background:var(--control-bg)}" +
+			".ob-nav-dd-link.ob-active .ob-ic{color:var(--blue-500,#2490ef)}" +
+			// Content card
+			"#ob-content-area{border:1px solid var(--border-color);border-radius:12px;padding:0;margin-bottom:16px;background:var(--fg-color);box-shadow:var(--shadow-sm);overflow:hidden}" +
+			"#ob-content-area .ob-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-color);flex-wrap:wrap}" +
+			"#ob-content-area .ob-list-title-wrap{display:flex;align-items:center;gap:9px;min-width:0}" +
+			"#ob-content-area .ob-list-title-wrap>.ob-ic{color:var(--blue-500,#2490ef);flex-shrink:0}" +
+			"#ob-content-area .ob-list-title{font-weight:700;font-size:14.5px;color:var(--text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+			"#ob-content-area .ob-count-badge{font-size:11.5px;font-weight:600;color:var(--text-muted);background:var(--control-bg);border-radius:999px;padding:2px 9px;flex-shrink:0}" +
+			"#ob-content-area .ob-list-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}" +
+			"#ob-content-area .ob-icon-btn{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;color:var(--text-muted);cursor:pointer;transition:background .1s ease,color .1s ease}" +
+			"#ob-content-area .ob-icon-btn:hover{background:var(--control-bg);color:var(--text-color)}" +
+			"#ob-content-area .ob-icon-btn.ob-spin .ob-ic{animation:ob-spin .6s linear infinite}" +
+			"@keyframes ob-spin{to{transform:rotate(360deg)}}" +
+			"#ob-content-area .ob-view-all{display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--blue-500,#2490ef);text-decoration:none;white-space:nowrap}" +
+			"#ob-content-area .ob-view-all:hover{text-decoration:underline}" +
+			// Table
 			"#ob-content-area .ob-table-wrap{overflow-x:auto}" +
-			"#ob-content-area .ob-list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}" +
-			"#ob-content-area .ob-list-title{font-weight:600;font-size:14px}" +
-			"#ob-content-area .ob-error{color:var(--red-600);padding:10px 0;}";
+			"#ob-content-area table{width:100%;border-collapse:collapse}" +
+			"#ob-content-area th{position:sticky;top:0;padding:9px 16px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);text-align:left;background:var(--fg-color);border-bottom:1px solid var(--border-color);white-space:nowrap}" +
+			"#ob-content-area td{padding:10px 16px;font-size:13px;color:var(--text-color);border-top:1px solid var(--border-color);white-space:nowrap}" +
+			"#ob-content-area th.ob-col-currency,#ob-content-area td.ob-col-currency{text-align:right;font-variant-numeric:tabular-nums}" +
+			"#ob-content-area tbody tr{cursor:pointer;transition:background .1s ease}" +
+			"#ob-content-area tbody tr:hover{background:var(--control-bg)}" +
+			"#ob-content-area tbody tr td:first-child{box-shadow:inset 3px 0 0 transparent}" +
+			"#ob-content-area tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--blue-500,#2490ef)}" +
+			"#ob-content-area .ob-id-link{color:var(--text-muted);font-size:12px}" +
+			// Status pill (reuses Frappe's own indicator-pill color tokens
+			// so it matches the rest of Desk and stays theme-aware)
+			"#ob-content-area .ob-status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}" +
+			"#ob-content-area .ob-status-pill::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}" +
+			// Empty / loading / error states
+			"#ob-content-area .ob-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:48px 20px;color:var(--text-muted);text-align:center}" +
+			"#ob-content-area .ob-state .ob-ic{color:var(--text-muted);opacity:.5}" +
+			"#ob-content-area .ob-state-text{font-size:13px}" +
+			"#ob-content-area .ob-state.ob-loading .ob-ic{animation:ob-spin .8s linear infinite;opacity:.8;color:var(--blue-500,#2490ef)}" +
+			"#ob-content-area .ob-error{color:var(--red-600);padding:10px 0}" +
+			"#ob-content-area .ob-error a{color:var(--blue-500,#2490ef);text-decoration:underline}" +
+			// Frappe's own Workspace content (the "OtoBitz Integration"/
+			// "Laporan" shortcut cards) renders into .editor-js-container
+			// (workspace.js: `this.$page = $('<div class="editor-js-
+			// container">').appendTo(this.body)`, a sibling of what we
+			// prepend into .layout-main-section) - hidden here, scoped to
+			// this one Workspace route, since the embedded Transaksi table
+			// now replaces it as the page's default content.
+			"body.ob-workspace-active .editor-js-container{display:none !important;}";
 		document.head.appendChild(s);
 	}
 
@@ -204,18 +299,56 @@
 		return "#";
 	}
 
-	function formatCell(fieldtype, value) {
+	function formatCell(fieldtype, value, row) {
+		if (fieldtype === "Status") {
+			if (value == null || value === "") return "";
+			const color = statusColor(value);
+			// Surface custom_cancelled_by_otobitz (see common.py's
+			// mark_otobitz_cancelled()) right on the status pill itself -
+			// otherwise a "Cancelled" row looks identical whether OtoBitz's
+			// own system cancelled the source WO/transaction or a person
+			// cancelled it by hand in ERPNext, with no way to tell which
+			// without digging into OtoBitz Sync Log timestamps by hand. A
+			// manual cancel still has an attributable human behind it
+			// (modified_by, updated by Frappe itself on every cancel) -
+			// frappe.user_info() reads the already-loaded boot cache, no
+			// extra round trip needed, same helper the Timeline/comments
+			// use to turn a user id into a display name.
+			let label = String(value);
+			if (/cancel/i.test(label) && row) {
+				if (row.custom_cancelled_by_otobitz) {
+					label += " (OtoBitz)";
+				} else if (row.modified_by) {
+					const who = frappe.user_info(row.modified_by).fullname || row.modified_by;
+					label += ` (oleh ${who})`;
+				}
+			}
+			return `<span class="ob-status-pill indicator-pill ${color} no-indicator-dot">${frappe.utils.escape_html(label)}</span>`;
+		}
 		if (value == null || value === "") return "";
 		if (fieldtype === "Currency") return frappe.utils.escape_html(format_currency(value));
 		if (fieldtype === "Date") return frappe.utils.escape_html(frappe.datetime.str_to_user(value));
 		return frappe.utils.escape_html(String(value));
 	}
 
+	// Tracks the currently-shown Transaksi item so the refresh button and
+	// the dropdown's "active item" highlight both have something to read.
+	let currentItem = null;
+
+	function loadingState() {
+		return `<div class="ob-state ob-loading">${icon("loader-circle", 26)}<div class="ob-state-text">Memuat data...</div></div>`;
+	}
+	function emptyState() {
+		return `<div class="ob-state">${icon("inbox", 26)}<div class="ob-state-text">Tidak ada data.</div></div>`;
+	}
+
 	function renderEmbeddedList(item) {
+		currentItem = item;
 		const $area = $("#ob-content-area");
-		$area.show().html('<div class="text-muted">Memuat...</div>');
+		$area.show().html(loadingState());
 
 		const fields = ["name"].concat(item.columns.map((c) => c[0]));
+		if (item.trackCancelSource) fields.push("custom_cancelled_by_otobitz", "modified_by");
 
 		frappe
 			.call({
@@ -233,7 +366,7 @@
 			})
 			.catch((err) => {
 				$area.html(
-					`<div class="ob-error">Gagal memuat data ${frappe.utils.escape_html(item.doctype)}. ` +
+					`<div class="ob-error" style="padding:20px 16px;">Gagal memuat data ${frappe.utils.escape_html(item.doctype)}. ` +
 						`<a href="${buildHref(item)}">Coba buka List View biasa &rarr;</a></div>`
 				);
 				console.error("OtoBitz embedded list failed:", err);
@@ -245,19 +378,21 @@
 
 		let body = "";
 		if (!rows.length) {
-			body = '<div class="text-muted">Tidak ada data.</div>';
+			body = emptyState();
 		} else {
 			let html = '<div class="ob-table-wrap"><table><thead><tr>';
 			html += "<th>" + __("ID") + "</th>";
-			item.columns.forEach(([, label]) => {
-				html += `<th>${frappe.utils.escape_html(label)}</th>`;
+			item.columns.forEach(([, label, fieldtype]) => {
+				const cls = fieldtype === "Currency" ? ' class="ob-col-currency"' : "";
+				html += `<th${cls}>${frappe.utils.escape_html(label)}</th>`;
 			});
 			html += "</tr></thead><tbody>";
 			rows.forEach((row) => {
 				html += `<tr data-name="${frappe.utils.escape_html(row.name)}" data-doctype="${frappe.utils.escape_html(item.doctype)}">`;
-				html += `<td>${frappe.utils.escape_html(row.name)}</td>`;
+				html += `<td class="ob-id-link">${frappe.utils.escape_html(row.name)}</td>`;
 				item.columns.forEach(([fieldname, , fieldtype]) => {
-					html += `<td>${formatCell(fieldtype, row[fieldname])}</td>`;
+					const cls = fieldtype === "Currency" ? ' class="ob-col-currency"' : "";
+					html += `<td${cls}>${formatCell(fieldtype, row[fieldname], row)}</td>`;
 				});
 				html += "</tr>";
 			});
@@ -268,13 +403,23 @@
 		const $area = $("#ob-content-area");
 		$area.html(
 			`<div class="ob-list-head">` +
-				`<div class="ob-list-title">${frappe.utils.escape_html(item.label)} <span class="text-muted" style="font-weight:400;">(${rows.length})</span></div>` +
-				`<a href="${list_href}">${__("Lihat semua di List View")} &rarr;</a>` +
+				`<div class="ob-list-title-wrap">${icon(item.icon || "list", 17)}` +
+				`<div class="ob-list-title">${frappe.utils.escape_html(item.label)}</div>` +
+				`<div class="ob-count-badge">${rows.length}</div></div>` +
+				`<div class="ob-list-actions">` +
+				`<div class="ob-icon-btn" title="${__("Muat ulang")}" id="ob-refresh-btn">${icon("refresh-cw", 14)}</div>` +
+				`<a class="ob-view-all" href="${list_href}">${__("Lihat semua")}${icon("arrow-right", 13)}</a>` +
+				`</div>` +
 				`</div>` +
 				body
 		);
 		$area.find("tbody tr[data-name]").on("click", function () {
 			frappe.set_route("Form", $(this).data("doctype"), $(this).data("name"));
+		});
+		$area.find("#ob-refresh-btn").on("click", function () {
+			const $btn = $(this).addClass("ob-spin");
+			renderEmbeddedList(item);
+			setTimeout(() => $btn.removeClass("ob-spin"), 500);
 		});
 	}
 
@@ -282,19 +427,29 @@
 		const $bar = $('<div id="ob-navbar"></div>');
 		MENUS.forEach((menu) => {
 			const $item = $('<div class="ob-nav-item"></div>');
-			const $btn = $(`<div class="ob-nav-btn">${frappe.utils.escape_html(menu.label)}<span class="ob-nav-chevron">&#9662;</span></div>`);
+			const $btn = $(
+				`<div class="ob-nav-btn">${icon(menu.icon || "folder", 15)}` +
+					`<span>${frappe.utils.escape_html(menu.label)}</span>` +
+					`<span class="ob-nav-chevron">${icon("chevron-down", 11)}</span></div>`
+			);
 			const $dd = $('<div class="ob-nav-dd"></div>');
 			menu.items.forEach((entry) => {
 				if (entry.embed) {
-					const $link = $(`<div class="ob-nav-dd-link">${frappe.utils.escape_html(entry.label)}</div>`);
+					const $link = $(
+						`<div class="ob-nav-dd-link">${icon(entry.icon || "file", 15)}<span>${frappe.utils.escape_html(entry.label)}</span></div>`
+					);
 					$link.on("click", (e) => {
 						e.stopPropagation();
 						$(".ob-nav-item").removeClass("ob-open");
+						$(".ob-nav-dd-link").removeClass("ob-active");
+						$link.addClass("ob-active");
 						renderEmbeddedList(entry);
 					});
 					$dd.append($link);
 				} else {
-					$dd.append(`<a href="${buildHref(entry)}">${frappe.utils.escape_html(entry.label)}</a>`);
+					$dd.append(
+						`<a href="${buildHref(entry)}">${icon(entry.icon || "file", 15)}<span>${frappe.utils.escape_html(entry.label)}</span></a>`
+					);
 				}
 			});
 			$item.append($btn).append($dd);
@@ -307,6 +462,10 @@
 			$bar.append($item);
 		});
 		$(document).off("click.obnav").on("click.obnav", () => $(".ob-nav-item").removeClass("ob-open"));
+		// Mark the default Transaksi item (auto-loaded below) as active
+		// right away, so the dropdown reflects reality the first time it's
+		// opened instead of showing nothing selected.
+		$bar.find(".ob-nav-dd-link").first().addClass("ob-active");
 		return $bar;
 	}
 
@@ -350,6 +509,7 @@
 
 		if (!on_workspace) {
 			$("#ob-navbar, #ob-content-area").remove();
+			currentItem = null;
 			return;
 		}
 		if ($("#ob-navbar").length) return;
@@ -362,6 +522,10 @@
 		if (!$target.length) return;
 		$target.prepend('<div id="ob-content-area" style="display:none;"></div>');
 		$target.prepend(buildNavbar());
+		// Load straight into the default Transaksi view (Sales Order (WO))
+		// instead of landing on the now-hidden native Workspace cards and
+		// requiring a click just to see anything.
+		renderEmbeddedList(MENUS[0].items[0]);
 	}
 
 	frappe.router.on("change", () => setTimeout(injectOrRemove, 300));
