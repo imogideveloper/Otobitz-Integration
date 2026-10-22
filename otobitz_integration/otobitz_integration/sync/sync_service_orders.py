@@ -218,6 +218,10 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	so.transaction_date = getdate(header.get("tanggal"))
 	so.delivery_date = getdate(header.get("tanggal"))
 	so.custom_otobitz_wo_number = nomorwo
+	# Odoo-side column names the List View is kept matching to - same value
+	# as custom_otobitz_wo_number, just the label this was already shown
+	# under there.
+	so.custom_otobitz_so_number = nomorwo
 	set_period_fields(so, so.transaction_date)
 	# This integration never creates a Delivery Note (OtoBitz owns physical
 	# stock), so without this every synced order would sit permanently
@@ -299,6 +303,13 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.insert(ignore_permissions=True, ignore_mandatory=True)
 	si.submit()
 	sync_so_payment_status(si.name)
+
+	# Faktur number only exists once the invoice is made, so it lands on
+	# the Sales Order here rather than alongside custom_otobitz_so_number
+	# in _create_sales_order - same Odoo-matching List View column as
+	# custom_otobitz_nofaktur on the Sales Invoice, just the SO-side copy.
+	if si.custom_otobitz_nofaktur:
+		frappe.db.set_value("Sales Order", so_name, "custom_otobitz_faktur_number", si.custom_otobitz_nofaktur)
 
 
 @frappe.whitelist()
