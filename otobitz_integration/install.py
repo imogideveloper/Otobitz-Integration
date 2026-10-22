@@ -37,3 +37,19 @@ def after_app_install(app_name):
 	if changed:
 		settings.save(ignore_permissions=True)
 		frappe.db.commit()
+
+
+def reapply_fixtures():
+	"""Re-import this app's fixtures after every migrate.
+
+	imogi_finance is installed after this app and ships fixtures with the same
+	names (e.g. 'Sales Order-main-field_order'); its sync would otherwise win.
+	"""
+	from frappe.utils.fixtures import import_fixtures
+
+	frappe.flags.in_fixtures = True
+	try:
+		import_fixtures("otobitz_integration")
+	finally:
+		frappe.flags.in_fixtures = False
+	frappe.clear_cache()

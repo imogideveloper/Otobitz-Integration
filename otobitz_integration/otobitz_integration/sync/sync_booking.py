@@ -23,7 +23,14 @@ from erpnext.accounts.doctype.payment_entry.payment_entry import get_bank_cash_a
 from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
-from otobitz_integration.otobitz_integration.sync.common import clean, renew_sync_lock, set_period_fields
+from otobitz_integration.otobitz_integration.sync.common import (
+	clean,
+	log_failed_sync,
+	mark_otobitz_cancelled,
+	renew_sync_lock,
+	resolve_failed_sync,
+	set_period_fields,
+)
 
 WATERMARK_FIELD = "last_booking_sync_date"
 OVERLAP_DAYS = 3
@@ -75,9 +82,13 @@ def sync_booking() -> dict:
 				created += was_created
 				updated += not was_created
 				frappe.db.commit()
-			except Exception:
+				resolve_failed_sync("penerimaanuangmukabooking", nomor)
+				frappe.db.commit()
+			except Exception as exc:
 				frappe.db.rollback()
 				frappe.log_error(title=f"OtoBitz sync: failed to sync booking advance {nomor}")
+				log_failed_sync("penerimaanuangmukabooking", nomor, str(exc), row)
+				frappe.db.commit()
 				failed += 1
 
 	frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
@@ -92,6 +103,7 @@ def _sync_one_booking(nomor: str, row: dict) -> bool:
 	if (row.get("status") or "").strip().lower() == "batal":
 		if existing and frappe.db.get_value("Payment Entry", existing, "docstatus") == 1:
 			frappe.get_doc("Payment Entry", existing).cancel()
+			mark_otobitz_cancelled("Payment Entry", existing)
 		return False
 
 	if existing:

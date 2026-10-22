@@ -26,7 +26,14 @@ required_apps = ["frappe/erpnext"]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
-app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js"
+# The query string is a manual cache-buster: app_include_js isn't routed
+# through esbuild's content-hashed .bundle.js/assets.json manifest (that only
+# applies to paths containing ".bundle."), so without it the browser caches
+# this file indefinitely and never re-fetches it after an edit - navigating
+# within the SPA doesn't even re-run <script> tags, so only a hard refresh
+# would ever show a change, and a plain refresh could still serve the stale
+# cached copy. Bump this number (v=N) every time otobitz_navbar.js changes.
+app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=13"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
@@ -44,7 +51,7 @@ app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {"OtoBitz Failed Sync": "public/js/otobitz_failed_sync_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -143,13 +150,26 @@ after_app_install = "otobitz_integration.install.after_app_install"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Sales Order": {
+		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
+	},
+	"Sales Invoice": {
+		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series"
+	},
+	"Purchase Order": {
+		"validate": "otobitz_integration.purchase_order.track",
+		"before_update_after_submit": "otobitz_integration.purchase_order.track"
+	},
+	"Payment Entry": {
+		"on_submit": "otobitz_integration.purchase_order.on_payment_entry",
+		"on_cancel": "otobitz_integration.purchase_order.on_payment_entry"
+	},
+	"Purchase Invoice": {
+		"on_submit": "otobitz_integration.purchase_order.on_purchase_invoice",
+		"on_cancel": "otobitz_integration.purchase_order.on_purchase_invoice"
+	}
+}
 
 # Scheduled Tasks
 # ---------------
@@ -160,6 +180,8 @@ scheduler_events = {
 	],
 }
 
+after_migrate = ["otobitz_integration.install.reapply_fixtures"]
+
 # Fixtures
 # --------
 
@@ -167,6 +189,7 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Client Script", "filters": [["module", "=", "OtoBitz Integration"]]},
+	{"dt": "List View Settings", "filters": [["name", "in", ["Sales Order", "Sales Invoice", "Payment Entry"]]]},
 ]
 
 # Testing

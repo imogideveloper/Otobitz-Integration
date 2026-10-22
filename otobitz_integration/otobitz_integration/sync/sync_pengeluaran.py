@@ -24,7 +24,14 @@ import frappe
 from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
-from otobitz_integration.otobitz_integration.sync.common import clean, renew_sync_lock, set_period_fields
+from otobitz_integration.otobitz_integration.sync.common import (
+	clean,
+	log_failed_sync,
+	mark_otobitz_cancelled,
+	renew_sync_lock,
+	resolve_failed_sync,
+	set_period_fields,
+)
 
 WATERMARK_FIELD = "last_pengeluaran_sync_date"
 OVERLAP_DAYS = 3
@@ -80,9 +87,13 @@ def sync_pengeluaran() -> dict:
 				# matters: a later row's rollback must never wipe out rows
 				# already synced earlier in this same chunk.
 				frappe.db.commit()
-			except Exception:
+				resolve_failed_sync("pengeluaranuang", nomor)
+				frappe.db.commit()
+			except Exception as exc:
 				frappe.db.rollback()
 				frappe.log_error(title=f"OtoBitz sync: failed to sync expense {nomor}")
+				log_failed_sync("pengeluaranuang", nomor, str(exc), row)
+				frappe.db.commit()
 				failed += 1
 
 	frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
@@ -99,6 +110,7 @@ def _sync_one_expense(nomor: str, row: dict) -> bool:
 	if (row.get("status") or "").strip().lower() == "batal":
 		if existing and frappe.db.get_value("Journal Entry", existing, "docstatus") == 1:
 			frappe.get_doc("Journal Entry", existing).cancel()
+			mark_otobitz_cancelled("Journal Entry", existing)
 		return False
 
 	if existing:

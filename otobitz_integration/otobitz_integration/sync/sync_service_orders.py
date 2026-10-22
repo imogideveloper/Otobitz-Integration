@@ -39,8 +39,11 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	clean_or_none,
 	get_or_create_vehicle,
+	log_failed_sync,
 	log_so_detail_rows,
+	mark_otobitz_cancelled,
 	renew_sync_lock,
+	resolve_failed_sync,
 	safe_name,
 	set_period_fields,
 	sync_so_payment_status,
@@ -125,9 +128,16 @@ def sync_service_orders() -> dict:
 				# sync logs to report e.g. "193 created" for a run that left
 				# 0 new Sales Orders in the database.
 				frappe.db.commit()
-			except Exception:
+				# In case this WO previously failed and is only succeeding
+				# now (whether via this normal pass or a manual retry from
+				# the OtoBitz Failed Sync queue) - see retry.py.
+				resolve_failed_sync("otoxpertsoandpart", nomorwo)
+				frappe.db.commit()
+			except Exception as exc:
 				frappe.db.rollback()
 				frappe.log_error(title=f"OtoBitz sync: failed to sync Work Order {nomorwo}")
+				log_failed_sync("otoxpertsoandpart", nomorwo, str(exc), wo_rows)
+				frappe.db.commit()
 				failed += 1
 
 		frappe.logger("otobitz_integration").info(
@@ -172,9 +182,11 @@ def _cancel_wo_documents(so_name: str) -> None:
 		si = frappe.get_doc("Sales Invoice", si_name)
 		if si.docstatus == 1:
 			si.cancel()
+			mark_otobitz_cancelled("Sales Invoice", si_name)
 	so = frappe.get_doc("Sales Order", so_name)
 	if so.docstatus == 1:
 		so.cancel()
+		mark_otobitz_cancelled("Sales Order", so_name)
 
 
 def _resolve_customer(header: dict) -> str | None:
@@ -209,13 +221,15 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(header.get("kode_cabang"))})
 	teknisi = frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": clean(header.get("kodeteknisi"))})
+	vehicle_type = _link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe"))
+	vehicle_color = _link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna"))
 	vehicle = get_or_create_vehicle(
 		header.get("norangka"),
 		nopolisi=header.get("nopolisi"),
 		nomesin=header.get("nomesin"),
 		customer=customer,
-		vehicle_type=_link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe")),
-		vehicle_color=_link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna")),
+		vehicle_type=vehicle_type,
+		vehicle_color=vehicle_color,
 		tahunpembuatan=header.get("tahunpembuatan"),
 		odometer=header.get("odemeter"),
 	)
@@ -226,6 +240,10 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	so.transaction_date = getdate(header.get("tanggal"))
 	so.delivery_date = getdate(header.get("tanggal"))
 	so.custom_otobitz_wo_number = nomorwo
+	# Odoo-side column names the List View is kept matching to - same value
+	# as custom_otobitz_wo_number, just the label this was already shown
+	# under there.
+	so.custom_otobitz_so_number = nomorwo
 	set_period_fields(so, so.transaction_date)
 	# This integration never creates a Delivery Note (OtoBitz owns physical
 	# stock), so without this every synced order would sit permanently
@@ -239,6 +257,23 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		so.custom_otobitz_teknisi = teknisi
 	if vehicle:
 		so.custom_otobitz_vehicle = vehicle
+	# These mirror OtoBitz Vehicle's own fields and are declared as
+	# fetch_from=custom_otobitz_vehicle.<field> on the Sales Order doctype,
+	# but Frappe's fetch_from only auto-populates when the link field is
+	# changed interactively in the browser - it's a no-op on a doc built and
+	# inserted from Python, which is how every synced order is created. Set
+	# explicitly here from the same source data instead of relying on it.
+	so.custom_nomor_rangka = clean(header.get("norangka"))
+	so.custom_nomor_mesin = clean(header.get("nomesin"))
+	so.custom_tahun_kendaraan = clean(header.get("tahunpembuatan"))
+	so.custom_plat_nomor = clean(header.get("nopolisi"))
+	if vehicle_type:
+		so.custom_vehicle_type = vehicle_type
+	if vehicle_color:
+		so.custom_warna = vehicle_color
+	odometer = flt(header.get("odemeter"))
+	if odometer:
+		so.custom_odometer = odometer
 
 	for row in wo_rows:
 		item_code = clean(row.get("kodereferensi"))
@@ -307,6 +342,13 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.insert(ignore_permissions=True, ignore_mandatory=True)
 	si.submit()
 	sync_so_payment_status(si.name)
+
+	# Faktur number only exists once the invoice is made, so it lands on
+	# the Sales Order here rather than alongside custom_otobitz_so_number
+	# in _create_sales_order - same Odoo-matching List View column as
+	# custom_otobitz_nofaktur on the Sales Invoice, just the SO-side copy.
+	if si.custom_otobitz_nofaktur:
+		frappe.db.set_value("Sales Order", so_name, "custom_otobitz_faktur_number", si.custom_otobitz_nofaktur)
 
 
 @frappe.whitelist()

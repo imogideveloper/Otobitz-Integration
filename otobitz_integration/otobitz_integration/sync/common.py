@@ -110,6 +110,71 @@ def clean_phone(value) -> str | None:
 	return value or None
 
 
+def mark_otobitz_cancelled(doctype: str, docname: str) -> None:
+	"""Flag a document the sync just cancelled (because its source WO/
+	transaction was cancelled in OtoBitz itself) as custom_cancelled_by_otobitz
+	= 1, so it's distinguishable from a document someone cancelled manually in
+	ERPNext - without this there was no way to tell the two apart short of
+	cross-referencing the document's `modified` timestamp against the hourly
+	OtoBitz Sync Log by hand. Called right after `doc.cancel()` in every
+	sync module that handles a cancellation (set via frappe.db.set_value, not
+	doc.save(), since the document is already cancelled/read-only at this
+	point)."""
+	frappe.db.set_value(doctype, docname, "custom_cancelled_by_otobitz", 1, update_modified=False)
+
+
+def log_failed_sync(endpoint: str, record_key: str, error_message: str, raw_data) -> None:
+	"""Record (or update) one row in the "OtoBitz Failed Sync" retry queue for
+	a record a sync function couldn't process this run.
+
+	`raw_data` is whatever was being synced (the single row dict most
+	endpoints pass around, or the list of line-item rows sync_service_orders
+	groups per WO) - stored as JSON so a later manual retry can re-run the
+	exact same per-record sync function directly against it, without
+	re-fetching from the OtoBitz API (which may not even return this record
+	again once it's rolled out of the sync's rolling date window). Upserted
+	by endpoint+record_key so repeat hourly failures for the same record
+	update one row (bumping attempt_count) instead of piling up duplicates -
+	this function is the only place that creates OtoBitz Failed Sync rows,
+	and resolve_failed_sync() is the only place that removes them, so the
+	queue always reflects exactly what's still actually broken."""
+	import json
+
+	dedup_key = f"{endpoint}|{record_key}"
+	existing = frappe.db.get_value("OtoBitz Failed Sync", {"dedup_key": dedup_key})
+	now = frappe.utils.now_datetime()
+	if existing:
+		doc = frappe.get_doc("OtoBitz Failed Sync", existing)
+		doc.attempt_count = (doc.attempt_count or 0) + 1
+		doc.last_attempt_at = now
+		doc.error_message = error_message
+		doc.raw_data = json.dumps(raw_data, default=str, ensure_ascii=False)
+		doc.save(ignore_permissions=True)
+	else:
+		doc = frappe.new_doc("OtoBitz Failed Sync")
+		doc.dedup_key = dedup_key
+		doc.endpoint = endpoint
+		doc.record_key = record_key
+		doc.attempt_count = 1
+		doc.first_failed_at = now
+		doc.last_attempt_at = now
+		doc.error_message = error_message
+		doc.raw_data = json.dumps(raw_data, default=str, ensure_ascii=False)
+		doc.insert(ignore_permissions=True)
+
+
+def resolve_failed_sync(endpoint: str, record_key: str) -> None:
+	"""Remove a record from the retry queue once it's synced successfully -
+	called on the success path of every sync function that also calls
+	log_failed_sync() on failure, so a record that failed once but goes
+	through fine on a later hourly pass (or a manual retry) doesn't linger
+	in the queue forever. A no-op (not an error) if it was never queued."""
+	dedup_key = f"{endpoint}|{record_key}"
+	existing = frappe.db.get_value("OtoBitz Failed Sync", {"dedup_key": dedup_key})
+	if existing:
+		frappe.delete_doc("OtoBitz Failed Sync", existing, ignore_permissions=True, force=True)
+
+
 def get_or_create_branch(kode: str | None, nama: str | None) -> str | None:
 	kode = clean(kode)
 	nama = clean(nama)
