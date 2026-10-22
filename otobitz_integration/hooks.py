@@ -154,6 +154,9 @@ doc_events = {
 	"Sales Order": {
 		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
 	},
+	"Sales Invoice": {
+		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series"
+	},
 	"Purchase Order": {
 		"validate": "otobitz_integration.purchase_order.track",
 		"before_update_after_submit": "otobitz_integration.purchase_order.track"
