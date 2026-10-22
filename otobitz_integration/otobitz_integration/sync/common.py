@@ -265,6 +265,61 @@ def create_purchase_order(
 	return po.name
 
 
+def log_so_detail_rows(rows: list[dict]) -> int:
+	"""Archive every raw `otoxpertsoandpart` line item into `OtoBitz SO Detail`,
+	one row in, one row out - no grouping by `nomorwo`, no dependency on
+	whether the matching Sales Order/Invoice was actually created.
+
+	This is a pure log, decoupled from the business documents built from the
+	same rows in sync_service_orders.py: a WO that gets skipped there (no
+	resolvable customer, no resolvable items, cancelled, whatever) still shows
+	up here exactly as OtoBitz sent it, because the archive's whole purpose is
+	to answer "what did OtoBitz actually say" independent of how the
+	downstream documents turned out. Dedup/upsert key is `nomorwo + kodereferensi`
+	(one Work Order's rows are always distinct per item code - see the
+	masterdata_sparepart-style flat-join notes in sync_service_orders.py) so a
+	re-fetch of the same window (the sync's own overlap days, or a manual
+	re-run) updates the existing row in place instead of duplicating it."""
+	import json
+
+	logged = 0
+	for row in rows:
+		nomorwo = clean(row.get("nomorwo"))
+		kodereferensi = clean(row.get("kodereferensi"))
+		if not nomorwo or not kodereferensi:
+			continue
+		dedup_key = f"{nomorwo}|{kodereferensi}"
+		values = {
+			"nomorwo": nomorwo,
+			"nofaktur": clean(row.get("nofaktur")),
+			"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
+			"statuswo": clean(row.get("statuswo")),
+			"kode_cabang": clean(row.get("kode_cabang")),
+			"namacabang": clean(row.get("namacabang")),
+			"teknisi": clean(row.get("teknisi")),
+			"customer_name": clean(row.get("nama")),
+			"nopolisi": clean(row.get("nopolisi")),
+			"kodereferensi": kodereferensi,
+			"namareferensi": clean(row.get("namareferensi")),
+			"jenisdoc": clean(row.get("jenisdoc")),
+			"qty": flt(row.get("qty")),
+			"harga": flt(row.get("harga")),
+			"discperitem": flt(row.get("discperitem")),
+			"subtotal": flt(row.get("subtotal")),
+			"grandtotal": flt(row.get("grandtotal")),
+			"nilaipenerimaan": flt(row.get("nilaipenerimaan")),
+			"sisapiutang": flt(row.get("sisapiutang")),
+			"raw_data": json.dumps(row, default=str, ensure_ascii=False),
+		}
+		values = {k: v for k, v in values.items() if v is not None}
+		try:
+			upsert("OtoBitz SO Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+			logged += 1
+		except Exception:
+			frappe.log_error(title=f"OtoBitz sync: failed to archive SO Detail row {dedup_key}")
+	return logged
+
+
 def get_or_create_uom(uom_name: str | None) -> str:
 	uom_name = clean(uom_name) or "Nos"
 	if not frappe.db.exists("UOM", uom_name):
