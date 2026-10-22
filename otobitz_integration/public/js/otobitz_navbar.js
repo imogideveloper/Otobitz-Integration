@@ -166,6 +166,33 @@
 		document.head.appendChild(s);
 	}
 
+	// Workspace pages get centered with a max-width by Frappe itself
+	// (desktop.scss: `[data-page-route="Workspaces"] .layout-main` gets
+	// `max-width: var(--page-max-width)` unless <body> has "full-width") -
+	// that's what was actually eating the side margins, not
+	// .layout-main-section-wrapper's own 80% rule from page.scss (fixing
+	// that alone left this stronger, more specific rule still in charge).
+	// Frappe already ships a real "Toggle Full Width" feature for exactly
+	// this (ui/toolbar/toolbar.js, persisted in
+	// localStorage.container_fullwidth) - reusing that native class instead
+	// of fighting it with a custom width override. Only toggled on while
+	// this Workspace route is active, and only removed again on the way out
+	// if *we* were the one who turned it on, so a user who already has
+	// their own "full width" preference set everywhere never gets it
+	// switched off by this page.
+	let addedFullWidth = false;
+	function syncFullWidth(on_workspace) {
+		if (on_workspace) {
+			if (!document.body.classList.contains("full-width")) {
+				document.body.classList.add("full-width");
+				addedFullWidth = true;
+			}
+		} else if (addedFullWidth) {
+			document.body.classList.remove("full-width");
+			addedFullWidth = false;
+		}
+	}
+
 	function buildHref(item) {
 		if (item.report) return "/app/query-report/" + encodeURIComponent(item.report);
 		if (item.route) return "/app/" + item.route.join("/");
@@ -292,14 +319,46 @@
 	}
 
 	function injectOrRemove() {
-		const $existing = $("#ob-navbar");
-		if (!isWorkspaceRoute()) {
-			$existing.remove();
-			$("#ob-content-area").remove();
+		const on_workspace = isWorkspaceRoute();
+		document.body.classList.toggle("ob-workspace-active", on_workspace);
+		syncFullWidth(on_workspace);
+
+		// Frappe keeps every page visited this session in the DOM, toggling
+		// plain display:none on old ones instead of removing them (see
+		// container.js) - so a #ob-navbar/#ob-content-area injected on an
+		// earlier visit to this Workspace doesn't disappear when the user
+		// navigates away, it just goes invisible along with its now-hidden
+		// parent. Sweep those out on every call so there's never more than
+		// one live copy in the DOM: without this, both the "already
+		// injected?" check below and the #ob-content-area lookups in
+		// renderEmbeddedList()/renderTable() could silently resolve to a
+		// stale hidden copy instead of the one actually on screen (jQuery's
+		// #id selectors return the first DOM match, not necessarily the
+		// visible one, when duplicate ids exist).
+		//
+		// Checked via the *.layout-main-section ancestor's* visibility, not
+		// the element's own - #ob-content-area is deliberately
+		// display:none until a Transaksi item is clicked, so checking its
+		// own visibility treated every legitimate, correctly-placed copy as
+		// "stale" a moment after injecting it and deleted it right back out
+		// (renderEmbeddedList's $("#ob-content-area") then silently matched
+		// nothing, so clicking a Transaksi item did nothing at all).
+		$("#ob-navbar, #ob-content-area").each(function () {
+			const $section = $(this).closest(".layout-main-section");
+			if (!$section.length || !$section.is(":visible")) $(this).remove();
+		});
+
+		if (!on_workspace) {
+			$("#ob-navbar, #ob-content-area").remove();
 			return;
 		}
-		if ($existing.length) return;
-		const $target = $(".layout-main-section").first();
+		if ($("#ob-navbar").length) return;
+		// .first() in DOM order would pick whichever page loaded first this
+		// session, which is only the *current* page by coincidence (a hard
+		// reload, where this is the only page that's ever existed) -
+		// :visible filters down to the one actually on screen regardless of
+		// how many hidden ones have piled up from earlier navigation.
+		const $target = $(".layout-main-section").filter(":visible").first();
 		if (!$target.length) return;
 		$target.prepend('<div id="ob-content-area" style="display:none;"></div>');
 		$target.prepend(buildNavbar());
@@ -308,4 +367,35 @@
 	frappe.router.on("change", () => setTimeout(injectOrRemove, 300));
 	$(document).on("page-change", () => setTimeout(injectOrRemove, 300));
 	setTimeout(injectOrRemove, 800);
+
+	// Fixed-delay setTimeout calls above are a best-effort nudge, not a
+	// guarantee: the Workspace page fetches and renders its own content
+	// asynchronously, and on a slow/cold load (or a hard refresh landing
+	// directly on this route) that can finish well after 800ms - or it can
+	// re-render .layout-main-section's contents *after* we've already
+	// injected, wiping the navbar back out with no further "change"/
+	// "page-change" event to catch it. A MutationObserver on the whole page
+	// body sidesteps guessing at timing entirely: injectOrRemove() is a cheap
+	// no-op when the navbar is already present (see the early return above),
+	// so calling it on every DOM mutation is safe and makes the navbar
+	// self-healing regardless of how/when the Workspace page finishes
+	// rendering.
+	const observer = new MutationObserver(() => {
+		if (isWorkspaceRoute()) injectOrRemove();
+	});
+	observer.observe(document.body, { childList: true, subtree: true });
+
+	// Belt-and-suspenders on top of the observer: navigating straight from
+	// one Workspace to another (sidebar link, not a hard reload) sometimes
+	// lands in a brief window where frappe.get_route() hasn't updated yet at
+	// the exact moment the Workspace page's own async content swap fires its
+	// DOM mutations - the observer's callback checks isWorkspaceRoute() at
+	// that stale instant, sees "not yet this route", and skips injecting,
+	// and if nothing else mutates the DOM afterwards there's no second
+	// chance. A standing 1s poll closes that gap unconditionally: it costs
+	// nothing when idle (injectOrRemove() no-ops the moment the navbar is
+	// already correctly present/absent for the current route) and removes
+	// the dependency on any particular Frappe event firing in a particular
+	// order.
+	setInterval(injectOrRemove, 1000);
 })();

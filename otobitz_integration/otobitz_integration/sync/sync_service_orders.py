@@ -209,13 +209,15 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(header.get("kode_cabang"))})
 	teknisi = frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": clean(header.get("kodeteknisi"))})
+	vehicle_type = _link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe"))
+	vehicle_color = _link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna"))
 	vehicle = get_or_create_vehicle(
 		header.get("norangka"),
 		nopolisi=header.get("nopolisi"),
 		nomesin=header.get("nomesin"),
 		customer=customer,
-		vehicle_type=_link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe")),
-		vehicle_color=_link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna")),
+		vehicle_type=vehicle_type,
+		vehicle_color=vehicle_color,
 		tahunpembuatan=header.get("tahunpembuatan"),
 		odometer=header.get("odemeter"),
 	)
@@ -243,6 +245,23 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		so.custom_otobitz_teknisi = teknisi
 	if vehicle:
 		so.custom_otobitz_vehicle = vehicle
+	# These mirror OtoBitz Vehicle's own fields and are declared as
+	# fetch_from=custom_otobitz_vehicle.<field> on the Sales Order doctype,
+	# but Frappe's fetch_from only auto-populates when the link field is
+	# changed interactively in the browser - it's a no-op on a doc built and
+	# inserted from Python, which is how every synced order is created. Set
+	# explicitly here from the same source data instead of relying on it.
+	so.custom_nomor_rangka = clean(header.get("norangka"))
+	so.custom_nomor_mesin = clean(header.get("nomesin"))
+	so.custom_tahun_kendaraan = clean(header.get("tahunpembuatan"))
+	so.custom_plat_nomor = clean(header.get("nopolisi"))
+	if vehicle_type:
+		so.custom_vehicle_type = vehicle_type
+	if vehicle_color:
+		so.custom_warna = vehicle_color
+	odometer = flt(header.get("odemeter"))
+	if odometer:
+		so.custom_odometer = odometer
 
 	for row in wo_rows:
 		item_code = clean(row.get("kodereferensi"))

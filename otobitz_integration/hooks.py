@@ -26,7 +26,14 @@ required_apps = ["frappe/erpnext"]
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
-app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js"
+# The query string is a manual cache-buster: app_include_js isn't routed
+# through esbuild's content-hashed .bundle.js/assets.json manifest (that only
+# applies to paths containing ".bundle."), so without it the browser caches
+# this file indefinitely and never re-fetches it after an edit - navigating
+# within the SPA doesn't even re-run <script> tags, so only a hard refresh
+# would ever show a change, and a plain refresh could still serve the stale
+# cached copy. Bump this number (v=N) every time otobitz_navbar.js changes.
+app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=6"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
