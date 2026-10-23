@@ -15,6 +15,7 @@
   "minimum_amount",
   "maximum_amount",
   "approval_status",
+  "approved_count",
   "feedback",
   "can_override"
  ],
@@ -25,7 +26,7 @@
    "fieldname": "sequence",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Sequence"
+   "label": "Seq"
   },
   {
    "allow_on_submit": 1,
@@ -38,15 +39,13 @@
   },
   {
    "allow_on_submit": 1,
-   "columns": 1,
    "fieldname": "analytic_tags",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Analytic Tags"
   },
   {
    "allow_on_submit": 1,
-   "columns": 1,
+   "columns": 3,
    "fieldname": "users",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -58,7 +57,7 @@
    "fieldname": "minimum_approval",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Minimum Approval"
+   "label": "Min. Approval"
   },
   {
    "allow_on_submit": 1,
@@ -66,7 +65,7 @@
    "fieldname": "minimum_amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Minimum Amount"
+   "label": "Min. Amount"
   },
   {
    "allow_on_submit": 1,
@@ -74,15 +73,22 @@
    "fieldname": "maximum_amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Maximum Amount"
+   "label": "Max. Amount"
   },
   {
    "allow_on_submit": 1,
-   "columns": 1,
+   "columns": 2,
    "fieldname": "approval_status",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Approval Status"
+   "label": "Status"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "approved_count",
+   "fieldtype": "Int",
+   "label": "Approved Count",
+   "read_only": 1
   },
   {
    "allow_on_submit": 1,
@@ -99,14 +105,14 @@
    "fieldname": "can_override",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Can Override"
+   "label": "Override"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-10-20 14:24:02.416954",
+ "modified": "2026-10-23 19:55:35.217436",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "PO Approval Matrix",

@@ -65,7 +65,6 @@
 					doctype: "Sales Invoice",
 					filters: { custom_otobitz_wo_number: ["is", "set"] },
 					embed: true,
-					trackCancelSource: true,
 					columns: [
 						["custom_otobitz_wo_number", "Nomor WO"],
 						["custom_otobitz_nofaktur", "No. Faktur"],
@@ -109,7 +108,6 @@
 					doctype: "Purchase Order",
 					filters: { custom_otobitz_order_number: ["is", "set"] },
 					embed: true,
-					trackCancelSource: true,
 					columns: [
 						["custom_otobitz_order_number", "Nomor Order"],
 						["supplier", "Supplier"],
@@ -312,27 +310,7 @@
 		if (fieldtype === "Status") {
 			if (value == null || value === "") return "";
 			const color = statusColor(value);
-			// Surface custom_cancelled_by_otobitz (see common.py's
-			// mark_otobitz_cancelled()) right on the status pill itself -
-			// otherwise a "Cancelled" row looks identical whether OtoBitz's
-			// own system cancelled the source WO/transaction or a person
-			// cancelled it by hand in ERPNext, with no way to tell which
-			// without digging into OtoBitz Sync Log timestamps by hand. A
-			// manual cancel still has an attributable human behind it
-			// (modified_by, updated by Frappe itself on every cancel) -
-			// frappe.user_info() reads the already-loaded boot cache, no
-			// extra round trip needed, same helper the Timeline/comments
-			// use to turn a user id into a display name.
-			let label = String(value);
-			if (/cancel/i.test(label) && row) {
-				if (row.custom_cancelled_by_otobitz) {
-					label += " (OtoBitz)";
-				} else if (row.modified_by) {
-					const who = frappe.user_info(row.modified_by).fullname || row.modified_by;
-					label += ` (oleh ${who})`;
-				}
-			}
-			return `<span class="ob-status-pill indicator-pill ${color} no-indicator-dot">${frappe.utils.escape_html(label)}</span>`;
+			return `<span class="ob-status-pill indicator-pill ${color} no-indicator-dot">${frappe.utils.escape_html(String(value))}</span>`;
 		}
 		if (value == null || value === "") return "";
 		if (fieldtype === "Currency") return frappe.utils.escape_html(format_currency(value));
@@ -357,7 +335,6 @@
 		$area.show().html(loadingState());
 
 		const fields = ["name"].concat(item.columns.map((c) => c[0]));
-		if (item.trackCancelSource) fields.push("custom_cancelled_by_otobitz", "modified_by");
 
 		frappe
 			.call({

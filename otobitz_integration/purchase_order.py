@@ -1,8 +1,27 @@
 import frappe
+from frappe.model.naming import getseries
 from frappe.utils import flt, now_datetime
 
 WF = "PO Approval Workflow"
-PENDING = {"Pending Approval": "Pending", "Approved": "Approved", "Rejected": "Rejected"}
+
+def set_branch_naming_series(doc, method=None):
+	"""Odoo-style PO numbering: {branch_code}-P{counter}, e.g. 503-P30255.
+
+	Same decoupled-counter approach as Sales Invoice's
+	set_branch_naming_series (see sales_invoice.py) - set doc.name directly,
+	keyed only by branch code, so the counter never resets. Falls back to
+	the stock naming_series when the PO has no branch yet.
+	"""
+	branch_code = doc.custom_otobitz_branch and frappe.db.get_value(
+		"Branch", doc.custom_otobitz_branch, "custom_otobitz_branch_code"
+	)
+	if not branch_code:
+		doc.naming_series = "PUR-ORD-.YYYY.-"
+		return
+
+	series_key = f"{branch_code}-P-"
+	counter = getseries(series_key, 5)
+	doc.name = f"{branch_code}-P{counter}"
 
 
 def _child(dt, po, field, **v):
@@ -10,7 +29,12 @@ def _child(dt, po, field, **v):
 
 
 def track(po, method=None):
-	"""Append Approval History row (+ Approval Matrix once) when workflow_state changes. Runs before save so rows persist with the doc."""
+	"""Append Approval History row when workflow_state changes. Runs before save so rows persist with the doc.
+
+	Matrix rows are added manually by the user and their approval_status is
+	driven by approval.apply_approval_action - this only logs the coarse
+	workflow_state transition, it does not touch custom_approval_matrix.
+	"""
 	if not po.workflow_state:
 		return
 	before = po.get_doc_before_save()
@@ -19,11 +43,6 @@ def track(po, method=None):
 		return
 	role = frappe.db.get_value("Workflow Transition", {"parent": WF, "state": old, "next_state": po.workflow_state}, "allowed") if old else None
 	po.append("custom_approval_history", {"role": role, "user": frappe.session.user, "date": now_datetime(), "state": po.workflow_state})
-	if not po.get("custom_approval_matrix"):
-		appr = frappe.db.get_value("Workflow Transition", {"parent": WF, "next_state": "Approved"}, "allowed")
-		po.append("custom_approval_matrix", {"sequence": 1, "role": appr, "minimum_approval": 1, "minimum_amount": 0, "maximum_amount": 0})
-	for m in po.get("custom_approval_matrix"):
-		m.approval_status = PENDING.get(po.workflow_state, "")
 
 
 def refresh_advance(po_name):

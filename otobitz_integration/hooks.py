@@ -25,7 +25,7 @@ required_apps = ["frappe/erpnext"]
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
+app_include_css = "/assets/otobitz_integration/css/desk.css"
 # The query string is a manual cache-buster: app_include_js isn't routed
 # through esbuild's content-hashed .bundle.js/assets.json manifest (that only
 # applies to paths containing ".bundle."), so without it the browser caches
@@ -33,7 +33,7 @@ required_apps = ["frappe/erpnext"]
 # within the SPA doesn't even re-run <script> tags, so only a hard refresh
 # would ever show a change, and a plain refresh could still serve the stale
 # cached copy. Bump this number (v=N) every time otobitz_navbar.js changes.
-app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=13"
+app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=14"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
@@ -158,6 +158,7 @@ doc_events = {
 		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series"
 	},
 	"Purchase Order": {
+		"autoname": "otobitz_integration.purchase_order.set_branch_naming_series",
 		"validate": "otobitz_integration.purchase_order.track",
 		"before_update_after_submit": "otobitz_integration.purchase_order.track"
 	},

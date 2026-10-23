@@ -110,19 +110,6 @@ def clean_phone(value) -> str | None:
 	return value or None
 
 
-def mark_otobitz_cancelled(doctype: str, docname: str) -> None:
-	"""Flag a document the sync just cancelled (because its source WO/
-	transaction was cancelled in OtoBitz itself) as custom_cancelled_by_otobitz
-	= 1, so it's distinguishable from a document someone cancelled manually in
-	ERPNext - without this there was no way to tell the two apart short of
-	cross-referencing the document's `modified` timestamp against the hourly
-	OtoBitz Sync Log by hand. Called right after `doc.cancel()` in every
-	sync module that handles a cancellation (set via frappe.db.set_value, not
-	doc.save(), since the document is already cancelled/read-only at this
-	point)."""
-	frappe.db.set_value(doctype, docname, "custom_cancelled_by_otobitz", 1, update_modified=False)
-
-
 def log_failed_sync(endpoint: str, record_key: str, error_message: str, raw_data) -> None:
 	"""Record (or update) one row in the "OtoBitz Failed Sync" retry queue for
 	a record a sync function couldn't process this run.

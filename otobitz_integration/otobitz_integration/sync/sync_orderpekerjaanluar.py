@@ -21,7 +21,6 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	create_purchase_order,
 	log_failed_sync,
-	mark_otobitz_cancelled,
 	renew_sync_lock,
 	resolve_failed_sync,
 )
@@ -100,7 +99,6 @@ def _sync_one_order(nomor: str, row: dict) -> bool:
 	if (row.get("batal") or "").strip().lower() == "t":
 		if existing and frappe.db.get_value("Purchase Order", existing, "docstatus") == 1:
 			frappe.get_doc("Purchase Order", existing).cancel()
-			mark_otobitz_cancelled("Purchase Order", existing)
 		return False
 
 	if existing:

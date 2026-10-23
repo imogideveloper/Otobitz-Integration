@@ -10,7 +10,7 @@
   "docstatus": 0,
   "doctype": "List View Settings",
   "fields": "[{\"fieldname\": \"transaction_date\", \"label\": \"Order Date\"}, {\"fieldname\": \"customer_name\", \"label\": \"Customer\"}, {\"fieldname\": \"custom_salesperson\", \"label\": \"Salesperson\"}, {\"fieldname\": \"company\", \"label\": \"Company\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"custom_payment_status\", \"label\": \"Status\"}, {\"fieldname\": \"custom_otobitz_so_number\", \"label\": \"Nomor SO OTO\"}, {\"fieldname\": \"custom_otobitz_faktur_number\", \"label\": \"Nomor Faktur OTO\"}]",
-  "modified": "2026-10-22 13:30:00.000000",
+  "modified": "2026-10-22 13:30:00",
   "name": "Sales Order",
   "show_tags": 0
  },

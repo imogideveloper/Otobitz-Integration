@@ -41,7 +41,6 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	get_or_create_vehicle,
 	log_failed_sync,
 	log_so_detail_rows,
-	mark_otobitz_cancelled,
 	renew_sync_lock,
 	resolve_failed_sync,
 	safe_name,
@@ -182,11 +181,9 @@ def _cancel_wo_documents(so_name: str) -> None:
 		si = frappe.get_doc("Sales Invoice", si_name)
 		if si.docstatus == 1:
 			si.cancel()
-			mark_otobitz_cancelled("Sales Invoice", si_name)
 	so = frappe.get_doc("Sales Order", so_name)
 	if so.docstatus == 1:
 		so.cancel()
-		mark_otobitz_cancelled("Sales Order", so_name)
 
 
 def _resolve_customer(header: dict) -> str | None:
