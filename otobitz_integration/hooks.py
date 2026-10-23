@@ -25,7 +25,7 @@ required_apps = ["frappe/erpnext"]
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = "/assets/otobitz_integration/css/desk.css"
+app_include_css = "/assets/otobitz_integration/css/desk.css?v=3"
 # The query string is a manual cache-buster: app_include_js isn't routed
 # through esbuild's content-hashed .bundle.js/assets.json manifest (that only
 # applies to paths containing ".bundle."), so without it the browser caches
@@ -167,7 +167,13 @@ doc_events = {
 		"on_cancel": "otobitz_integration.purchase_order.on_payment_entry"
 	},
 	"Purchase Invoice": {
-		"on_submit": "otobitz_integration.purchase_order.on_purchase_invoice",
+		"autoname": "otobitz_integration.purchase_invoice.set_branch_naming_series",
+		"validate": "otobitz_integration.purchase_invoice.track",
+		"before_update_after_submit": "otobitz_integration.purchase_invoice.track",
+		"on_submit": [
+			"otobitz_integration.purchase_order.on_purchase_invoice",
+			"otobitz_integration.purchase_invoice.populate_journal_items"
+		],
 		"on_cancel": "otobitz_integration.purchase_order.on_purchase_invoice"
 	}
 }
@@ -190,7 +196,7 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Client Script", "filters": [["module", "=", "OtoBitz Integration"]]},
-	{"dt": "List View Settings", "filters": [["name", "in", ["Sales Order", "Sales Invoice", "Payment Entry"]]]},
+	{"dt": "List View Settings", "filters": [["name", "in", ["Sales Order", "Sales Invoice", "Payment Entry", "Purchase Invoice"]]]},
 ]
 
 # Testing

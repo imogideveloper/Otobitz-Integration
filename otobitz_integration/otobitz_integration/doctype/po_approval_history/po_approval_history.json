@@ -11,6 +11,8 @@
   "user",
   "date",
   "state",
+  "action",
+  "matrix_row",
   "digital_signature"
  ],
  "fields": [
@@ -50,9 +52,25 @@
   },
   {
    "allow_on_submit": 1,
+   "columns": 1,
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "\nApproved\nRejected"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "matrix_row",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Matrix Row"
+  },
+  {
+   "allow_on_submit": 1,
    "columns": 2,
    "fieldname": "digital_signature",
-   "fieldtype": "Data",
+   "fieldtype": "Signature",
    "in_list_view": 1,
    "label": "Digital Signature"
   }
@@ -61,7 +79,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-10-20 14:24:02.471287",
+ "modified": "2026-10-23 22:32:24.899419",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "PO Approval History",
