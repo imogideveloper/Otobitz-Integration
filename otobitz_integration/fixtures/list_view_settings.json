@@ -69,7 +69,7 @@
   "disable_sidebar_stats": 0,
   "docstatus": 0,
   "doctype": "List View Settings",
-  "fields": "[{\"fieldname\": \"supplier\", \"label\": \"Vendor\"}, {\"fieldname\": \"custom_confirmation_date\", \"label\": \"Confirmation Date\"}, {\"fieldname\": \"schedule_date\", \"label\": \"Receipt Date\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"custom_billing_status\", \"label\": \"Billing Status\"}, {\"fieldname\": \"status\", \"label\": \"Status\"}]",
+  "fields": "[{\"fieldname\": \"supplier\", \"label\": \"Vendor\"}, {\"fieldname\": \"custom_confirmation_date\", \"label\": \"Confirmation Date\"}, {\"fieldname\": \"schedule_date\", \"label\": \"Receipt Date\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"status\", \"label\": \"Status\"}]",
   "name": "Purchase Order",
   "show_tags": 0
  }
