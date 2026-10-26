@@ -26,7 +26,6 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	log_failed_sync,
-	mark_otobitz_cancelled,
 	renew_sync_lock,
 	resolve_failed_sync,
 	set_period_fields,
@@ -103,7 +102,6 @@ def _sync_one_booking(nomor: str, row: dict) -> bool:
 	if (row.get("status") or "").strip().lower() == "batal":
 		if existing and frappe.db.get_value("Payment Entry", existing, "docstatus") == 1:
 			frappe.get_doc("Payment Entry", existing).cancel()
-			mark_otobitz_cancelled("Payment Entry", existing)
 		return False
 
 	if existing:

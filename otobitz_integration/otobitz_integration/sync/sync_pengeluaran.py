@@ -27,7 +27,6 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	log_failed_sync,
-	mark_otobitz_cancelled,
 	renew_sync_lock,
 	resolve_failed_sync,
 	set_period_fields,
@@ -110,7 +109,6 @@ def _sync_one_expense(nomor: str, row: dict) -> bool:
 	if (row.get("status") or "").strip().lower() == "batal":
 		if existing and frappe.db.get_value("Journal Entry", existing, "docstatus") == 1:
 			frappe.get_doc("Journal Entry", existing).cancel()
-			mark_otobitz_cancelled("Journal Entry", existing)
 		return False
 
 	if existing:

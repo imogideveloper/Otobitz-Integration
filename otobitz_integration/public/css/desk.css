@@ -1,0 +1,24 @@
+/* Workspace/module icons on /desk truncate long labels ("Manufactur...",
+   "OtoBitz Inte...") with the stock single-line + text-overflow:ellipsis -
+   letting them wrap instead shows the full name without widening the grid. */
+.icon-title {
+	white-space: normal !important;
+	overflow: visible !important;
+	text-overflow: unset !important;
+	line-height: 1.2;
+}
+
+/* List view column header row — soft blue tint across all doctypes.
+   Matches the #dbe4ef per-doctype override set in the Purchase
+   Order/Sales Order/Sales Invoice/Payment Entry list scripts, so this
+   global fallback doesn't visually disagree with them. */
+.list-row-head {
+	background-color: #dbe4ef !important;
+	color: #36414c !important;
+}
+.list-row-head a,
+.list-row-head span,
+.list-row-head .text-muted {
+	color: #36414c !important;
+}
+
