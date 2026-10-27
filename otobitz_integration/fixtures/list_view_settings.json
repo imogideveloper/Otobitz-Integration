@@ -9,8 +9,8 @@
   "disable_sidebar_stats": 0,
   "docstatus": 0,
   "doctype": "List View Settings",
-  "fields": "[{\"fieldname\": \"name\", \"label\": \"ID\"}, {\"fieldname\": \"supplier\", \"label\": \"Vendor\"}, {\"fieldname\": \"posting_date\", \"label\": \"Bill Date\"}, {\"fieldname\": \"due_date\", \"label\": \"Due Date\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"status\", \"label\": \"Status\"}]",
-  "modified": "2026-10-23 15:07:06.061112",
+  "fields": "[{\"fieldname\": \"supplier\", \"label\": \"Vendor\"}, {\"fieldname\": \"posting_date\", \"label\": \"Bill Date\"}, {\"fieldname\": \"due_date\", \"label\": \"Due Date\"}, {\"fieldname\": \"bill_no\", \"label\": \"Reference\"}, {\"fieldname\": \"tax_id\", \"label\": \"Tax Number\"}, {\"fieldname\": \"net_total\", \"label\": \"Tax Excluded\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"total_taxes_and_charges\", \"label\": \"Total PPN\"}, {\"fieldname\": \"taxes_and_charges_deducted\", \"label\": \"Total PPh\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
+  "modified": "2026-10-26 10:00:00",
   "name": "Purchase Invoice",
   "show_tags": 0
  },
@@ -54,7 +54,7 @@
   "disable_sidebar_stats": 0,
   "docstatus": 0,
   "doctype": "List View Settings",
-  "fields": "[{\"fieldname\": \"payment_type\", \"label\": \"Number\"}, {\"fieldname\": \"paid_to\", \"label\": \"Journal\"}, {\"fieldname\": \"mode_of_payment\", \"label\": \"Payment Method\"}, {\"fieldname\": \"party\", \"label\": \"Customer\"}, {\"fieldname\": \"paid_amount\", \"label\": \"Amount\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
+  "fields": "[{\"fieldname\": \"payment_type\", \"label\": \"Number\"}, {\"fieldname\": \"paid_to\", \"label\": \"Journal\"}, {\"fieldname\": \"mode_of_payment\", \"label\": \"Payment Method\"}, {\"fieldname\": \"party\", \"label\": \"Party\"}, {\"fieldname\": \"paid_amount\", \"label\": \"Amount\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
   "modified": "2026-10-21 13:59:10.034470",
   "name": "Payment Entry",
   "show_tags": 0
