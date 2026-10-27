@@ -199,7 +199,7 @@ fixtures = [
 	{"dt": "Custom Field", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Property Setter", "filters": [["module", "=", "OtoBitz Integration"]]},
 	{"dt": "Client Script", "filters": [["module", "=", "OtoBitz Integration"]]},
-	{"dt": "List View Settings", "filters": [["name", "in", ["Sales Order", "Sales Invoice", "Payment Entry", "Purchase Invoice"]]]},
+	{"dt": "List View Settings", "filters": [["name", "in", ["Sales Order", "Sales Invoice", "Payment Entry", "Purchase Invoice", "Purchase Order"]]]},
 ]
 
 # Testing
