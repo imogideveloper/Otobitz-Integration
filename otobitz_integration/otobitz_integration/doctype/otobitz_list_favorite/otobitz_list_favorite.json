@@ -1,0 +1,109 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-28 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "favorite_name",
+  "reference_doctype",
+  "column_break_owner",
+  "for_user",
+  "is_global",
+  "section_break_state",
+  "filters",
+  "group_fields",
+  "sort_by",
+  "sort_order"
+ ],
+ "fields": [
+  {
+   "fieldname": "favorite_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Favorite Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Reference Document Type",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_owner",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Blank means personal (owner only). Set with Is Global instead of clearing this directly.",
+   "fieldname": "for_user",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "For User",
+   "options": "User"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_global",
+   "fieldtype": "Check",
+   "label": "Is Global (share with all users)"
+  },
+  {
+   "fieldname": "section_break_state",
+   "fieldtype": "Section Break",
+   "label": "Saved View State"
+  },
+  {
+   "description": "JSON array of [doctype, fieldname, condition, value] - same shape as the native List Filter doctype's filters field.",
+   "fieldname": "filters",
+   "fieldtype": "Long Text",
+   "label": "Filters"
+  },
+  {
+   "description": "JSON array of group keys, in the same format otobitz_group_by.js uses internally (e.g. [\"supplier\", \"schedule_date:month\"]). Mirrors Odoo's Favorites saving its active Group By alongside the filter, which the native Frappe List Filter doctype does not.",
+   "fieldname": "group_fields",
+   "fieldtype": "Long Text",
+   "label": "Group Fields"
+  },
+  {
+   "fieldname": "sort_by",
+   "fieldtype": "Data",
+   "label": "Sort By"
+  },
+  {
+   "fieldname": "sort_order",
+   "fieldtype": "Select",
+   "label": "Sort Order",
+   "options": "asc\ndesc"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-10-28 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz List Favorite",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Desk User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

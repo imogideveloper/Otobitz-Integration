@@ -377,6 +377,21 @@
 			if (!injectUI()) { var n = 0; var iv = setInterval(function () { n++; if (injectUI() || n > 20) clearInterval(iv); }, 200); }
 			sched(700);
 		});
+
+		// Small public API so other widgets (otobitz_favorites.js) can read
+		// and drive this one's grouping state without reaching into its
+		// closure - e.g. applying a saved Favorite's stored group keys, or
+		// reading the current selection to save into a new Favorite.
+		listview.__ob_gg_api = {
+			getGroups: function () { return selected_groups.slice(); },
+			setGroups: function (keys) {
+				refreshGroupDefinitions();
+				var valid = GROUP_OPTIONS.map(function (g) { return g.key; });
+				selected_groups = (keys || []).filter(function (k) { return valid.indexOf(k) > -1; });
+				collapsed_groups = {};
+				injectUI(); syncChk(); updDisp(); sched(300);
+			},
+		};
 	}
 
 	// Rolled out Desk-wide after validating the UX on Purchase Order first -
