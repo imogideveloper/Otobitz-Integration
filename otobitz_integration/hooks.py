@@ -32,8 +32,11 @@ app_include_css = "/assets/otobitz_integration/css/desk.css?v=3"
 # this file indefinitely and never re-fetches it after an edit - navigating
 # within the SPA doesn't even re-run <script> tags, so only a hard refresh
 # would ever show a change, and a plain refresh could still serve the stale
-# cached copy. Bump this number (v=N) every time otobitz_navbar.js changes.
-app_include_js = "/assets/otobitz_integration/js/otobitz_navbar.js?v=14"
+# cached copy. Bump the v=N for a file every time that file changes.
+app_include_js = [
+	"/assets/otobitz_integration/js/otobitz_navbar.js?v=14",
+	"/assets/otobitz_integration/js/otobitz_group_by.js?v=4",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/otobitz_integration/css/otobitz_integration.css"
