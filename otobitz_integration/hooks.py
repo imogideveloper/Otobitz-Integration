@@ -35,7 +35,7 @@ app_include_css = "/assets/otobitz_integration/css/desk.css?v=3"
 # cached copy. Bump the v=N for a file every time that file changes.
 app_include_js = [
 	"/assets/otobitz_integration/js/otobitz_navbar.js?v=14",
-	"/assets/otobitz_integration/js/otobitz_group_by.js?v=4",
+	"/assets/otobitz_integration/js/otobitz_group_by.js?v=10",
 ]
 
 # include js, css files in header of web template

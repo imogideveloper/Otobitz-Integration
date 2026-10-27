@@ -69,7 +69,8 @@
   "disable_sidebar_stats": 0,
   "docstatus": 0,
   "doctype": "List View Settings",
-  "fields": "[{\"fieldname\": \"supplier\", \"label\": \"Vendor\"}, {\"fieldname\": \"status\", \"label\": \"Status\"}, {\"fieldname\": \"custom_confirmation_date\", \"label\": \"Confirmation Date\"}, {\"fieldname\": \"schedule_date\", \"label\": \"Receipt Date\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}]",
+  "fields": "[{\"fieldname\": \"custom_confirmation_date\", \"label\": \"Confirmation Date\"}, {\"fieldname\": \"supplier\", \"label\": \"Vendor\"}, {\"fieldname\": \"custom_source_document\", \"label\": \"Source Document\"}, {\"fieldname\": \"company\", \"label\": \"Company\"}, {\"fieldname\": \"schedule_date\", \"label\": \"Receipt Date\"}, {\"fieldname\": \"custom_purchase_rep\", \"label\": \"Purchase Representative\"}, {\"fieldname\": \"grand_total\", \"label\": \"Total\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
+  "modified": "2026-10-27 18:02:39.780667",
   "name": "Purchase Order",
   "show_tags": 0
  }

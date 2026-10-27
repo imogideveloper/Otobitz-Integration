@@ -23,7 +23,14 @@
 	if (!frappe.views || !frappe.views.ListView) return;
 
 	const MN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-	const GROUPABLE_FIELDTYPES = ["Link", "Select", "Dynamic Link", "Check"];
+	// Includes free-text types (Data/Small Text/Read Only) on top of the
+	// obviously-categorical ones - several real columns here are status-like
+	// or code-like values stored as plain text (e.g. Sales Order's
+	// custom_payment_status, Purchase Invoice's bill_no), not Link/Select,
+	// and were invisible to Group before this. Only Currency/Float/Int (and
+	// long-form Text/HTML) stay excluded: grouping by a near-unique number
+	// or a paragraph produces one group per row, which isn't a useful group.
+	const GROUPABLE_FIELDTYPES = ["Link", "Select", "Dynamic Link", "Check", "Data", "Small Text", "Read Only", "Int"];
 	const SKIP_FIELDNAMES = new Set(["name"]);
 
 	if (!document.getElementById("ob-gg-style")) {
@@ -33,8 +40,19 @@
 		// row (list_view.$filter_section), right next to it - not in the
 		// standard-filter-section row below where the per-field dropdowns
 		// (Status, Vendor, ...) live.
-		s.textContent = "#ob-gg-wrap{margin:var(--margin-xs);position:relative}"
+		// The native Filter button's icon/label spacing comes from
+		// whitespace between its <span> tags in frappe's own template
+		// (written as indented multi-line HTML) - our markup is built via
+		// string concatenation with no such whitespace, so the gap is set
+		// explicitly here instead of relying on incidental text nodes.
+		// No margin on #ob-gg-wrap itself: it carries the "filter-selector"
+		// class, so frappe's own ".filter-selector .btn-group" rule already
+		// applies var(--margin-xs) to the inner .btn-group - adding margin
+		// here too would double it up and visibly misalign the button
+		// against the native Filter button next to it.
+		s.textContent = "#ob-gg-wrap{position:relative}"
 			+ "#ob-gg-select{display:flex;align-items:center}"
+			+ "#ob-gg-select .filter-icon{margin-right:6px}"
 			+ "#ob-gg-badge{display:inline-block;font-weight:600;color:var(--text-color);background-color:var(--control-bg);min-width:21px;border-radius:22px;margin-left:6px;padding:0 6px;font-size:11px;line-height:17px;text-align:center}"
 			+ "#ob-gg-dd{display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--fg-color,#fff);border:1px solid var(--border-color,#d1d8dd);border-radius:8px;min-width:230px;max-height:320px;overflow-y:auto;z-index:9999;padding:8px 0;box-shadow:var(--shadow-lg,0 4px 16px rgba(0,0,0,.12))}"
 			+ ".ob-gg-dd-title{padding:0 12px 8px;font-size:11px;font-weight:600;color:#8d99a6;border-bottom:1px solid #f0f4f7;margin-bottom:4px;line-height:1.4}"
@@ -260,14 +278,16 @@
 		function updDisp() {
 			if (!$widget) return;
 			var $badge = $widget.find("#ob-gg-badge");
+			// The clear (x) button always stays visible - same as the native
+			// Filter button's own x button (.filter-x-button never hides
+			// either) - so the two-button .btn-group shape is identical to
+			// Filter's from first render, not just once something is picked.
 			if (selected_groups.length) {
 				$widget.find("#ob-gg-select").addClass("btn-primary-light");
 				$badge.text(String(selected_groups.length)).show();
-				$widget.find("#ob-gg-clr").show();
 			} else {
 				$widget.find("#ob-gg-select").removeClass("btn-primary-light");
 				$badge.hide();
-				$widget.find("#ob-gg-clr").hide();
 			}
 		}
 		function syncChk() {
@@ -288,13 +308,20 @@
 			// Markup mirrors the native Filter button exactly:
 			// .filter-selector > .btn-group > button.btn.btn-default.btn-sm
 			// (icon + label + badge), so it renders pixel-identical to it.
+			// Spacing is forced with an inline style (margin-right) directly
+			// on the icon span, not left to the external stylesheet - the
+			// native Filter button's gap comes from incidental whitespace
+			// in frappe's own template, which this concatenated string
+			// doesn't have, and a browser holding a stale cached copy of
+			// this file's own <style> block must not be able to collapse
+			// the icon and label back together.
 			return $('<div id="ob-gg-wrap" class="filter-selector">'
 				+ '<div class="btn-group">'
 				+ '<button id="ob-gg-select" class="btn btn-default btn-sm">'
-				+ '<span class="filter-icon button-icon">' + frappe.utils.icon("es-line-filter") + '</span>'
+				+ '<span class="filter-icon button-icon" style="margin-right:6px;display:inline-flex">' + frappe.utils.icon("es-line-group") + '</span>'
 				+ '<span class="button-label hidden-xs">' + __("Group") + '<span id="ob-gg-badge" style="display:none"></span></span>'
 				+ '</button>'
-				+ '<button id="ob-gg-clr" class="btn btn-default btn-sm" title="' + esc(__("Clear grouping")) + '" style="display:none">'
+				+ '<button id="ob-gg-clr" class="btn btn-default btn-sm" title="' + esc(__("Clear grouping")) + '">'
 				+ '<span class="filter-icon button-icon">' + frappe.utils.icon("es-small-close") + '</span>'
 				+ '</button>'
 				+ '</div>'
