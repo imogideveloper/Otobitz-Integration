@@ -14129,7 +14129,8 @@
   "sort_options": 0,
   "translatable": 0,
   "unique": 0,
-  "width": null
+  "width": null,
+  "doctype": "Custom Field"
  },
  {
   "alignment": null,
@@ -14187,7 +14188,8 @@
   "sort_options": 0,
   "translatable": 0,
   "unique": 0,
-  "width": null
+  "width": null,
+  "doctype": "Custom Field"
  },
  {
   "alignment": null,
@@ -14245,7 +14247,8 @@
   "sort_options": 0,
   "translatable": 0,
   "unique": 0,
-  "width": null
+  "width": null,
+  "doctype": "Custom Field"
  },
  {
   "alignment": null,
@@ -14303,7 +14306,8 @@
   "sort_options": 0,
   "translatable": 0,
   "unique": 0,
-  "width": null
+  "width": null,
+  "doctype": "Custom Field"
  },
  {
   "alignment": null,
@@ -14361,6 +14365,7 @@
   "sort_options": 0,
   "translatable": 0,
   "unique": 0,
-  "width": null
+  "width": null,
+  "doctype": "Custom Field"
  }
 ]
