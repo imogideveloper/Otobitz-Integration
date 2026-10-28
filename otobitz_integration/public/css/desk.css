@@ -22,3 +22,13 @@
 	color: #36414c !important;
 }
 
+/* List view: hide the right-side "modified / comment count / like" activity
+   cluster globally, header ("N of N" count + liked-by-me heart) and each row
+   (modified time, comment count, like icon) alike - not data the user wants
+   shown. Hiding .level-right itself (not just its children) so the now-empty
+   strip collapses instead of staying reserved as blank grey space. */
+.list-row-head .level-right,
+.list-row .level-right {
+	display: none !important;
+}
+
