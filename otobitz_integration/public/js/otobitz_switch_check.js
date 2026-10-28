@@ -38,4 +38,14 @@
 		make_input.apply(this, arguments);
 		this.$input && this.$input.attr("role", "switch");
 	};
+
+	// On a read-only field, base_input.js's refresh() hides .input-area and
+	// fills .disp-area via set_disp_area() instead - normally a plain text
+	// readout, but here .disp-area sits inside the switch-skinned markup too,
+	// so formatters.Check's raw "<input disabled>" would render a second,
+	// undesired checkbox next to the switch. The switch-visual track already
+	// reflects checked state on its own, via CSS `:has(input:checked)` on
+	// .input-area's real (hidden-but-present, not removed) input - so
+	// .disp-area never needs its own content here.
+	ControlCheck.prototype.set_disp_area = function () {};
 })();
