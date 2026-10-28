@@ -110,6 +110,40 @@ def clean_phone(value) -> str | None:
 	return value or None
 
 
+# Checked top to bottom, first match wins. Keep these aligned with reality,
+# not aspiration: each pattern here was lifted from an actual recurring
+# error_message seen in "OtoBitz Failed Sync", not guessed up front - add a
+# new one only once the same raw message has actually shown up grouped under
+# "Lainnya" a meaningful number of times.
+_ERROR_CATEGORY_PATTERNS = [
+	("Qty desimal ditolak oleh UOM", "cannot be a fraction"),
+	("Mode of Payment belum ada akun Cash/Bank", "Please set default Cash or Bank account in Mode of Payment"),
+	("Sales Invoice belum ada saat sync payment", "No Sales Invoice found for nofaktur"),
+	("Belum ada Approval Setting untuk Cost Center", "No active Approval Setting with a purchase"),
+	("Tidak ada DO Towing yang bisa ditagih", "Tidak ada DO Towing yang bisa ditagih"),
+	("Race condition penomoran Series", "Record has changed since last read"),
+	("Item tidak bisa di-resolve dari WO", "No resolvable Items for Work Order"),
+	("Customer tidak ditemukan berdasarkan nama", "No Customer found matching name"),
+]
+_ACCOUNT_ROW_RE = re.compile(r"Could not find Row #\d+: Account:")
+
+
+def categorize_error(error_message: str | None) -> str:
+	"""Collapse a raw error_message into one of a fixed set of human-readable
+	categories, so "OtoBitz Failed Sync" rows that are really the same root
+	cause - just with a different row number/quantity/account name baked into
+	the text - group together under Group By instead of each counting as its
+	own one-off problem."""
+	if not error_message:
+		return "Lainnya"
+	for category, needle in _ERROR_CATEGORY_PATTERNS:
+		if needle in error_message:
+			return category
+	if _ACCOUNT_ROW_RE.search(error_message):
+		return "Account tidak ditemukan/salah konfigurasi"
+	return "Lainnya"
+
+
 def log_failed_sync(endpoint: str, record_key: str, error_message: str, raw_data) -> None:
 	"""Record (or update) one row in the "OtoBitz Failed Sync" retry queue for
 	a record a sync function couldn't process this run.
@@ -130,11 +164,13 @@ def log_failed_sync(endpoint: str, record_key: str, error_message: str, raw_data
 	dedup_key = f"{endpoint}|{record_key}"
 	existing = frappe.db.get_value("OtoBitz Failed Sync", {"dedup_key": dedup_key})
 	now = frappe.utils.now_datetime()
+	category = categorize_error(error_message)
 	if existing:
 		doc = frappe.get_doc("OtoBitz Failed Sync", existing)
 		doc.attempt_count = (doc.attempt_count or 0) + 1
 		doc.last_attempt_at = now
 		doc.error_message = error_message
+		doc.error_category = category
 		doc.raw_data = json.dumps(raw_data, default=str, ensure_ascii=False)
 		doc.save(ignore_permissions=True)
 	else:
@@ -146,6 +182,7 @@ def log_failed_sync(endpoint: str, record_key: str, error_message: str, raw_data
 		doc.first_failed_at = now
 		doc.last_attempt_at = now
 		doc.error_message = error_message
+		doc.error_category = category
 		doc.raw_data = json.dumps(raw_data, default=str, ensure_ascii=False)
 		doc.insert(ignore_permissions=True)
 
