@@ -67,8 +67,17 @@ def get_token(force_refresh: bool = False) -> str:
 		json={"username": settings.username, "password": settings.get_password("password")},
 		timeout=REQUEST_TIMEOUT,
 	)
-	response.raise_for_status()
-	payload = response.json()
+	try:
+		response.raise_for_status()
+		payload = response.json()
+	except (requests.exceptions.HTTPError, requests.exceptions.JSONDecodeError) as exc:
+		# Unwrapped, this escapes call_api()'s per-chunk OtoBitzAPIError handling
+		# entirely - a single flaky token request (confirmed: intermittent
+		# 404/502 from the upstream token endpoint) was aborting a whole
+		# sync_service_orders() run instead of just costing it one retry.
+		raise OtoBitzAPIError(
+			f"HTTP {response.status_code} fetching OtoBitz token: {response.text[:500]}"
+		) from exc
 
 	if payload.get("status_code") != 200 or not payload.get("token"):
 		frappe.throw(frappe._("OtoBitz login failed: {0}").format(payload.get("message") or "unknown error"))
@@ -121,10 +130,16 @@ def _call_api_once(endpoint: str, payload: dict | None) -> dict:
 
 	try:
 		response.raise_for_status()
+		data = response.json()
 	except requests.exceptions.HTTPError as exc:
 		raise OtoBitzAPIError(f"HTTP {response.status_code} calling {endpoint}: {response.text[:500]}") from exc
+	except requests.exceptions.JSONDecodeError as exc:
+		# A 200 with a non-JSON body (seen in practice - an upstream error
+		# page) used to escape here uncaught, same failure mode as the
+		# get_token() fix above: one bad response killed the whole sync run
+		# instead of costing just this chunk a retry.
+		raise OtoBitzAPIError(f"Non-JSON response calling {endpoint}: {response.text[:500]}") from exc
 
-	data = response.json()
 	if data.get("error"):
 		raise OtoBitzAPIError(data.get("message") or f"OtoBitz API returned an error calling {endpoint}")
 
