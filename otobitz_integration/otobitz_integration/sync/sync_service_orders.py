@@ -383,3 +383,39 @@ def _link_if_exists(doctype: str, value) -> str | None:
 	if value and frappe.db.exists(doctype, value):
 		return value
 	return None
+
+
+@frappe.whitelist()
+def backfill_so_and_faktur_numbers() -> dict:
+	"""One-off: custom_otobitz_so_number/custom_otobitz_faktur_number were added
+	(see d43bd29) after Work Orders had already been syncing for a while, so any
+	Sales Order created before that only has custom_otobitz_wo_number set. Both
+	missing fields can be derived from data already on this site - no API call
+	needed: so_number is just wo_number's value (see _create_sales_order), and
+	faktur_number is the matching Sales Invoice's custom_otobitz_nofaktur (see
+	_create_sales_invoice)."""
+	frappe.only_for("System Manager")
+
+	frappe.db.sql(
+		"""
+		update `tabSales Order`
+		set custom_otobitz_so_number = custom_otobitz_wo_number
+		where ifnull(custom_otobitz_wo_number, '') != ''
+		  and ifnull(custom_otobitz_so_number, '') = ''
+		"""
+	)
+	so_rows = frappe.db.sql("select row_count()")[0][0]
+
+	frappe.db.sql(
+		"""
+		update `tabSales Order` so
+		join `tabSales Invoice` si on si.custom_otobitz_wo_number = so.custom_otobitz_wo_number
+		set so.custom_otobitz_faktur_number = si.custom_otobitz_nofaktur
+		where ifnull(si.custom_otobitz_nofaktur, '') != ''
+		  and ifnull(so.custom_otobitz_faktur_number, '') = ''
+		"""
+	)
+	faktur_rows = frappe.db.sql("select row_count()")[0][0]
+	frappe.db.commit()
+
+	return {"so_number_rows_matched": so_rows, "faktur_number_rows_matched": faktur_rows}
