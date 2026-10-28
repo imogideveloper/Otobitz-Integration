@@ -55,7 +55,16 @@ OVERLAP_DAYS = 3
 # (30 days) timed out every retry. Response time scales with the range, not
 # just raw slowness, so the window is walked in small chunks - same idea as
 # masterdata_customerpage's pagination, just keyed by date instead of page.
-CHUNK_DAYS = 2
+#
+# 1 day, not 2: confirmed live (2026-10-28) that even some 2-day windows get
+# zero bytes back from the upstream server for the full 180s read timeout -
+# not slow, just never responds - while the exact same date ranges split
+# into 1-day windows succeeded every time. A chunk-level failure here isn't
+# cheap: it was silently leaving Work Orders unsynced until someone compared
+# totals against the source system by hand (see reconciliation.py, which
+# exists precisely because that's what happened for 1-18 Oct). Doubling the
+# number of API calls per run is worth it against that.
+CHUNK_DAYS = 1
 
 
 def get_sync_window() -> tuple[str, str]:

@@ -190,6 +190,9 @@ scheduler_events = {
 	"hourly_long": [
 		"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_hourly_sync",
 	],
+	"daily": [
+		"otobitz_integration.otobitz_integration.sync.reconciliation.daily_reconciliation_check",
+	],
 }
 
 after_migrate = ["otobitz_integration.install.reapply_fixtures"]
