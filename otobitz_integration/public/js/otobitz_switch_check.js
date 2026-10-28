@@ -48,4 +48,35 @@
 	// .input-area's real (hidden-but-present, not removed) input - so
 	// .disp-area never needs its own content here.
 	ControlCheck.prototype.set_disp_area = function () {};
+
+	// Align the toggle with every other field's input column. CSS alone
+	// (flex-basis: clamp(110px,32%,190px), matching ordinary fields' own
+	// .clearfix rule) was tried first and measured correct in isolation, but
+	// produced different *rendered* widths on .switch-text vs. a sibling
+	// .clearfix with the identical rule and identical .form-group width on
+	// some real pages (confirmed via getBoundingClientRect, not just computed
+	// style) - a flexbox layout quirk under this app's container-query-driven
+	// column layout that wasn't worth chasing further. Measuring the actual
+	// sibling .clearfix width at runtime and applying it as an explicit
+	// inline width is exact by construction, in any viewport or content.
+	function align_switch_label_width($wrapper) {
+		const formGroup = $wrapper.closest(".form-column, .section-body");
+		if (!formGroup.length) return;
+		const $referenceClearfix = formGroup.find(".form-group > .clearfix").first();
+		if (!$referenceClearfix.length) return;
+		const width = $referenceClearfix[0].getBoundingClientRect().width;
+		if (width > 0) {
+			$wrapper.find(".switch-text").css("width", width + "px");
+		}
+	}
+
+	const refresh = ControlCheck.prototype.refresh;
+	ControlCheck.prototype.refresh = function () {
+		refresh.apply(this, arguments);
+		if (this.$wrapper) {
+			// Sibling fields may not have their own final width yet on the
+			// same tick (layout/webfont settling) - re-measure a frame later.
+			requestAnimationFrame(() => align_switch_label_width(this.$wrapper));
+		}
+	};
 })();
