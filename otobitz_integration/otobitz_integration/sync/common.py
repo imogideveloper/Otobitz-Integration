@@ -22,6 +22,13 @@ _MONTH_NAMES = [
 	"Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ]
 
+# Placeholder "author" for every document this sync creates (mirrors Odoo's
+# OdooBot on the source side) - distinguishes synced records from ones a
+# human actually built in Desk, where custom_salesperson instead defaults to
+# whoever is logged in (see the Sales Order-custom_salesperson Property
+# Setter's default="__user").
+IMOGIBOT_USER = "imogibot@otobitz.local"
+
 # Frappe's document-name validator rejects these (frappe/model/naming.py).
 _NAME_UNSAFE_RE = re.compile(r"[<>]+")
 # frappe.utils.validate_phone_number only allows these characters; OtoBitz
@@ -160,6 +167,20 @@ def resolve_failed_sync(endpoint: str, record_key: str) -> None:
 	existing = frappe.db.get_value("OtoBitz Failed Sync", {"dedup_key": dedup_key})
 	if existing:
 		frappe.delete_doc("OtoBitz Failed Sync", existing, ignore_permissions=True, force=True)
+
+
+def ensure_imogibot_user() -> str:
+	"""Get-or-create the Imogibot system user (see IMOGIBOT_USER) - called from
+	install.after_app_install so a fresh site has it before the first sync
+	run, and safe to call again from anywhere since it's a no-op once created."""
+	if not frappe.db.exists("User", IMOGIBOT_USER):
+		user = frappe.new_doc("User")
+		user.email = IMOGIBOT_USER
+		user.first_name = "Imogibot"
+		user.user_type = "System User"
+		user.send_welcome_email = 0
+		user.insert(ignore_permissions=True)
+	return IMOGIBOT_USER
 
 
 def get_or_create_branch(kode: str | None, nama: str | None) -> str | None:

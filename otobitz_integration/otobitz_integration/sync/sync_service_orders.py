@@ -36,6 +36,7 @@ from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
+	IMOGIBOT_USER,
 	clean,
 	clean_or_none,
 	get_or_create_vehicle,
@@ -241,6 +242,11 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	# as custom_otobitz_wo_number, just the label this was already shown
 	# under there.
 	so.custom_otobitz_so_number = nomorwo
+	# custom_salesperson defaults to "__user" (whoever's logged in) for a
+	# Sales Order built by hand in Desk - this sync runs as a service
+	# account, not a real salesperson, so it's set explicitly here instead,
+	# same role Odoo's OdooBot plays on synced records there.
+	so.custom_salesperson = IMOGIBOT_USER
 	set_period_fields(so, so.transaction_date)
 	# This integration never creates a Delivery Note (OtoBitz owns physical
 	# stock), so without this every synced order would sit permanently

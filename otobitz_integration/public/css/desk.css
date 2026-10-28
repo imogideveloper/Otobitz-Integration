@@ -32,3 +32,10 @@
 	display: none !important;
 }
 
+/* Hide Frappe's native "Saved Filters" toolbar button globally - superseded
+   by this app's own Favorites widget, which saves Filter + Group + Sort
+   together (Saved Filters only ever covered the filter half). */
+.inner-group-button[data-label="Saved%20Filters"] {
+	display: none !important;
+}
+
