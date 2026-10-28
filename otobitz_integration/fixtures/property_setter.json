@@ -13406,5 +13406,37 @@
   "property_type": "Check",
   "row_name": null,
   "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Order",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_detail_kendaraan_towing_section",
+  "is_system_generated": 0,
+  "modified": "2026-10-28 17:20:44.918053",
+  "module": "OtoBitz Integration",
+  "name": "Sales Order-custom_detail_kendaraan_towing_section-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Order",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_towing_kendaraan",
+  "is_system_generated": 0,
+  "modified": "2026-10-28 17:20:45.078278",
+  "module": "OtoBitz Integration",
+  "name": "Sales Order-custom_towing_kendaraan-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
  }
 ]
