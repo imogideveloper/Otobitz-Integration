@@ -352,6 +352,25 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	# custom_otobitz_nofaktur on the Sales Invoice, just the SO-side copy.
 	if si.custom_otobitz_nofaktur:
 		frappe.db.set_value("Sales Order", so_name, "custom_otobitz_faktur_number", si.custom_otobitz_nofaktur)
+		_add_oto_so_api_reference(so_name)
+
+
+def _add_oto_so_api_reference(so_name: str) -> None:
+	"""Mirrors Odoo's "Oto SO API" tracking field (a one-line-per-invoice log
+	reading "SO-xxx - SV-xxx"), on the Oto Integration tab - was previously
+	never populated by this sync at all, despite the Custom Field/child
+	doctype existing. Only called once a faktur_number exists (a Sales Order
+	can be synced from OtoBitz before its invoice is made, so_number alone
+	isn't the complete reference yet)."""
+	so_number, faktur_number = frappe.db.get_value(
+		"Sales Order", so_name, ["custom_otobitz_so_number", "custom_otobitz_faktur_number"]
+	)
+	if not (so_number and faktur_number):
+		return
+
+	so = frappe.get_doc("Sales Order", so_name)
+	so.append("custom_oto_so_api", {"api_reference": f"{so_number} - {faktur_number}"})
+	so.save(ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -425,3 +444,31 @@ def backfill_so_and_faktur_numbers() -> dict:
 	frappe.db.commit()
 
 	return {"so_number_rows_matched": so_rows, "faktur_number_rows_matched": faktur_rows}
+
+
+@frappe.whitelist()
+def backfill_oto_so_api_references() -> dict:
+	"""One-off: _add_oto_so_api_reference() (the Oto Integration tab's "OTO SO
+	API" log) was added after this sync had already been creating Sales
+	Orders/Invoices for a while - any Sales Order synced before that has
+	so_number/faktur_number but no matching custom_oto_so_api row."""
+	frappe.only_for("System Manager")
+
+	names = frappe.get_all(
+		"Sales Order",
+		filters={
+			"custom_otobitz_so_number": ["is", "set"],
+			"custom_otobitz_faktur_number": ["is", "set"],
+		},
+		pluck="name",
+	)
+	added = 0
+	for name in names:
+		existing = frappe.get_all("SO Oto API", filters={"parent": name}, limit=1)
+		if existing:
+			continue
+		_add_oto_so_api_reference(name)
+		added += 1
+	frappe.db.commit()
+
+	return {"checked": len(names), "rows_added": added}
