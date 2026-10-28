@@ -261,25 +261,41 @@
 			is_rendering = true;
 			try {
 				rmv();
+				var groupsByKey = {}; GROUP_OPTIONS.forEach(function (g) { groupsByKey[g.key] = g; });
+
 				var rs = [];
 				getRows().each(function () {
 					var $r = $(this), n = getDN($r);
 					if (!n) return;
-					var d = getDoc(n), dVal = DATE_FIELD && d ? d[DATE_FIELD] : null, dObj = dVal ? frappe.datetime.str_to_obj(dVal) : null;
-					var amt = SUM_FIELD && d ? flt(d[SUM_FIELD]) : 0;
-					rs.push({ $r: $r, n: n, doc: d || {}, ts: dObj ? dObj.getTime() : 0, amt: amt });
+					var d = getDoc(n) || {};
+					var dVal = DATE_FIELD ? d[DATE_FIELD] : null, dObj = dVal ? frappe.datetime.str_to_obj(dVal) : null;
+					var amt = SUM_FIELD ? flt(d[SUM_FIELD]) : 0;
+					var chain = selected_groups.map(function (k) { return { mode: groupsByKey[k].label, v: groupValue(d, groupsByKey[k], listview.doctype) }; });
+					rs.push({ $r: $r, n: n, doc: d, ts: dObj ? dObj.getTime() : 0, amt: amt, chain: chain });
 				});
-				if (DATE_FIELD) {
-					rs.sort(function (a, b) { return a.ts !== b.ts ? a.ts - b.ts : a.n.localeCompare(b.n); });
-					if (rs.length) { var $p = rs[0].$r.parent(); rs.forEach(function (r) { $p.append(r.$r); }); }
-				}
+
+				// Sort by the group chain itself first (each selected level in
+				// turn) so every row belonging to the same group ends up
+				// contiguous in the DOM - date (if a date column exists) is
+				// only the tie-breaker *within* an otherwise-identical chain.
+				// Sorting by date alone (the old behaviour) interleaved rows
+				// from different groups whenever they shared a column that
+				// wasn't actually being grouped on, so the same group label
+				// got inserted as two or more separate blocks instead of one.
+				rs.sort(function (a, b) {
+					for (var i = 0; i < selected_groups.length; i++) {
+						var ak = a.chain[i].v.key, bk = b.chain[i].v.key;
+						if (ak !== bk) return ak < bk ? -1 : 1;
+					}
+					if (a.ts !== b.ts) return a.ts - b.ts;
+					return a.n.localeCompare(b.n);
+				});
+				if (rs.length) { var $p = rs[0].$r.parent(); rs.forEach(function (r) { $p.append(r.$r); }); }
 
 				var countMap = {}, sumMap = {};
-				var groupsByKey = {}; GROUP_OPTIONS.forEach(function (g) { groupsByKey[g.key] = g; });
 				rs.forEach(function (item) {
-					var chain = selected_groups.map(function (k) { return groupValue(item.doc, groupsByKey[k], listview.doctype); });
-					chain.forEach(function (g, idx) {
-						var ck = chain.slice(0, idx + 1).map(function (x) { return x.key; }).join("||");
+					item.chain.forEach(function (g, idx) {
+						var ck = item.chain.slice(0, idx + 1).map(function (x) { return x.v.key; }).join("||");
 						countMap[ck] = (countMap[ck] || 0) + 1;
 						sumMap[ck] = (sumMap[ck] || 0) + item.amt;
 					});
@@ -287,7 +303,7 @@
 
 				var pk = [], pt = null;
 				rs.forEach(function (item) {
-					var chain = selected_groups.map(function (k) { return { mode: groupsByKey[k].label, v: groupValue(item.doc, groupsByKey[k], listview.doctype) }; });
+					var chain = item.chain;
 					if (!chain.length) return;
 					var tk = chain[0].v.key;
 					chain.forEach(function (c, idx) {
