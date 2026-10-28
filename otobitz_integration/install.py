@@ -26,6 +26,10 @@ def after_app_install(app_name):
 	if app_name != "otobitz_integration":
 		return
 
+	from otobitz_integration.otobitz_integration.sync.common import ensure_imogibot_user
+
+	ensure_imogibot_user()
+
 	settings = frappe.get_single("OtoBitz Settings")
 	changed = False
 	for fieldname, conf_key in CONFIG_KEYS.items():
@@ -53,3 +57,39 @@ def reapply_fixtures():
 	finally:
 		frappe.flags.in_fixtures = False
 	frappe.clear_cache()
+
+	# Runs on every migrate (not just after_app_install) so a site that
+	# already had this app installed before IMOGIBOT_USER existed - e.g.
+	# production - picks it up on its next `bench migrate` too.
+	from otobitz_integration.otobitz_integration.sync.common import ensure_imogibot_user
+
+	ensure_imogibot_user()
+	frappe.db.commit()
+
+
+def ensure_salesperson_default():
+	"""One-off (idempotent): Sales Order-custom_salesperson defaults to the
+	logged-in user ("__user") for anyone building a Sales Order by hand in
+	Desk - synced orders override this explicitly to IMOGIBOT_USER (see
+	_create_sales_order in sync_service_orders.py)."""
+	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+
+	exists = frappe.db.exists(
+		"Property Setter",
+		{"doc_type": "Sales Order", "field_name": "custom_salesperson", "property": "default"},
+	)
+	if exists:
+		return "already exists: " + exists
+
+	ps = make_property_setter(
+		"Sales Order",
+		"custom_salesperson",
+		"default",
+		"__user",
+		"Text",
+		is_system_generated=False,
+	)
+	ps.module = "OtoBitz Integration"
+	ps.save(ignore_permissions=True)
+	frappe.db.commit()
+	return "created: " + ps.name
