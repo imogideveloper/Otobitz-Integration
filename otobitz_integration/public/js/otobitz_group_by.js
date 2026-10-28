@@ -161,6 +161,41 @@
 		var selected_groups = [], collapsed_groups = {}, apply_timer = null, is_rendering = false;
 		var $widget = null;
 
+		// Grouping must reflect *everything* matching the current filters, not
+		// just whatever page_length happened to load - without this, Group By
+		// only ever grouped the current page's rows, so e.g. grouping by Order
+		// Date (Tahun) on a 20-row page showed one day's worth of data instead
+		// of every year on file. While a group level is selected, page_length
+		// is bumped so the list view's own fetch mechanism loads the full
+		// matching set as real rows (reusing applyGrouping()'s existing
+		// DOM/listview.data grouping as-is); clearing grouping restores
+		// whatever page_length was in effect before (the user's own last
+		// 20/100/500/2500 pick, not a hardcoded value).
+		// GROUP_ALL_LIMIT is a pragmatic cap, not literally "no limit" - it
+		// bounds both the query and how many DOM rows the browser has to
+		// render. Comfortably covers realistic current list sizes; a table
+		// that grows past it would need a different (virtualized) approach,
+		// out of scope here.
+		var GROUP_ALL_LIMIT = 20000, saved_page_length = null;
+
+		function ensureFullDataset(cb) {
+			if (listview.page_length >= GROUP_ALL_LIMIT) { cb(); return; }
+			saved_page_length = listview.page_length;
+			listview.start = 0;
+			listview.page_length = GROUP_ALL_LIMIT;
+			listview.selected_page_count = GROUP_ALL_LIMIT;
+			Promise.resolve(listview.refresh()).then(cb);
+		}
+		function restoreNormalDataset(cb) {
+			if (saved_page_length == null) { cb(); return; }
+			var restore_to = saved_page_length;
+			saved_page_length = null;
+			listview.start = 0;
+			listview.page_length = restore_to;
+			listview.selected_page_count = restore_to;
+			Promise.resolve(listview.refresh()).then(cb);
+		}
+
 		function getRows() { return listview.$result ? listview.$result.find(".list-row-container").filter(function () { return !!getDN($(this)); }) : $(); }
 		function getDN($r) { return $r.attr("data-name") || $r.find("[data-name]").first().attr("data-name") || null; }
 		function getDoc(n) { return Array.isArray(listview.data) ? listview.data.find(function (d) { return d.name === n; }) || null : null; }
@@ -274,7 +309,18 @@
 
 		var MAX_LEVELS = 3;
 
-		function sched(d) { clearTimeout(apply_timer); apply_timer = setTimeout(function () { refreshGroupDefinitions(); injectUI(); applyGrouping(); }, d || 400); }
+		function sched(d) {
+			clearTimeout(apply_timer);
+			apply_timer = setTimeout(function () {
+				refreshGroupDefinitions();
+				injectUI();
+				if (selected_groups.length) {
+					ensureFullDataset(function () { applyGrouping(); });
+				} else {
+					restoreNormalDataset(function () { applyGrouping(); });
+				}
+			}, d || 400);
+		}
 		function updDisp() {
 			if (!$widget) return;
 			var $badge = $widget.find("#ob-gg-badge");
