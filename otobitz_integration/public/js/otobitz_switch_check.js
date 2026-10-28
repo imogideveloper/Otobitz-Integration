@@ -63,8 +63,18 @@
 		const formGroup = $wrapper.closest(".form-column, .section-body");
 		if (!formGroup.length) return;
 		const $referenceClearfix = formGroup.find(".form-group > .clearfix").first();
-		if (!$referenceClearfix.length) return;
-		const width = $referenceClearfix[0].getBoundingClientRect().width;
+		const $referenceInput = formGroup.find(".form-group > .control-input-wrapper").first();
+		if (!$referenceClearfix.length || !$referenceInput.length) return;
+		const clearfixRect = $referenceClearfix[0].getBoundingClientRect();
+		const inputRect = $referenceInput[0].getBoundingClientRect();
+		// Measure the label's own left edge too (not assumed 0) and the real
+		// gap to its input sibling, rather than trusting switch-control's own
+		// gap to match - ordinary fields' .form-group gap turned out to
+		// render wider in practice than the declared 8px (likely an extra
+		// margin on .control-input-wrapper itself), so re-deriving the gap
+		// from these two siblings directly is exact regardless of why.
+		const gap = inputRect.left - clearfixRect.right;
+		const width = clearfixRect.width + Math.max(gap - 8, 0);
 		if (width > 0) {
 			$wrapper.find(".switch-text").css("width", width + "px");
 		}
