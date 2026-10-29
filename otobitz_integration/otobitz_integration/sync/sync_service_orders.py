@@ -395,6 +395,17 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.custom_otobitz_nilaipenerimaan = flt(header.get("nilaipenerimaan"))
 	si.custom_otobitz_sisapiutang = flt(header.get("sisapiutang"))
 	si.posting_date = getdate(header.get("tglfaktur") or header.get("tanggal"))
+	# Without this, erpnext's own TransactionBase.validate_posting_time()
+	# (called from Sales Invoice.validate()) silently stomps the explicit
+	# posting_date above back to today() the instant the doc validates -
+	# it only respects a manually-set posting_date when set_posting_time is
+	# truthy, since that flag is what the "Edit Posting Date and Time"
+	# checkbox on the form actually drives. Every synced invoice was
+	# getting the sync's own run date instead of the real OtoBitz invoice
+	# date (tglfaktur) because of this - confirmed directly against
+	# production data, not assumed (checked: ~82% of already-synced
+	# invoices had posting_date == creation date, not tglfaktur).
+	si.set_posting_time = 1
 	set_period_fields(si, si.posting_date)
 	si.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
 	si.set("taxes", [])
@@ -534,6 +545,86 @@ def backfill_so_and_faktur_numbers() -> dict:
 	frappe.db.commit()
 
 	return {"so_number_rows_matched": so_rows, "faktur_number_rows_matched": faktur_rows}
+
+
+@frappe.whitelist()
+def backfill_sales_invoice_posting_dates() -> dict:
+	"""One-off: _create_sales_invoice() set `posting_date` explicitly but
+	never `set_posting_time` - erpnext's own TransactionBase.validate_posting_time()
+	(called from Sales Invoice.validate()) silently overwrites posting_date
+	back to today() whenever set_posting_time isn't truthy, since that flag
+	is what the form's own "Edit Posting Date and Time" checkbox drives.
+	Every invoice synced before this fix shipped ended up posted on its own
+	*sync run date* instead of OtoBitz's real invoice date (tglfaktur) -
+	confirmed directly: ~82% of already-synced invoices had
+	posting_date == creation date, not tglfaktur (reported as "invoice date
+	gak sesuai sama yang ada di OtoBitz integration").
+
+	Recovers the correct date from OtoBitz SO Detail's own raw_data archive
+	(same source backfill_so_vehicle_and_contact_fields() already uses for
+	keluhan/saran/pic/alamat) - tglfaktur, falling back to tanggal, exactly
+	mirroring _create_sales_invoice()'s own fallback.
+
+	posting_date has no allow_on_submit, and GL Entry carries its own
+	separate copy of the date stamped at submit time - a header-only fix
+	would leave the invoice *displaying* the right date while its actual
+	ledger entries stayed on the wrong one. So this reposts each fixed
+	invoice's GL Entries too, via the exact same internal function
+	("Repost Accounting Ledger"'s own _repost_invoices()) the official
+	feature itself calls - not a hand-rolled GL rewrite - just invoked
+	directly instead of through that doctype's 50-voucher-per-document UI
+	batching, which isn't practical at this volume."""
+	frappe.only_for("System Manager")
+	import json
+
+	from erpnext.accounts.doctype.repost_accounting_ledger.repost_accounting_ledger import (
+		_repost_invoices,
+	)
+	from erpnext.accounts.utils import _delete_accounting_ledger_entries, _delete_adv_pl_entries
+
+	si_rows = frappe.get_all(
+		"Sales Invoice",
+		filters={"custom_otobitz_wo_number": ["is", "set"], "docstatus": 1},
+		fields=["name", "posting_date", "custom_otobitz_wo_number"],
+	)
+
+	checked = fixed = failed = 0
+	for i, si_row in enumerate(si_rows):
+		if i % 50 == 0:
+			renew_sync_lock()
+		checked += 1
+
+		raw = frappe.db.get_value("OtoBitz SO Detail", {"nomorwo": si_row.custom_otobitz_wo_number}, "raw_data")
+		if not raw:
+			continue
+		try:
+			header = json.loads(raw)
+		except (TypeError, ValueError):
+			continue
+
+		correct_date = getdate(header.get("tglfaktur") or header.get("tanggal") or "") or None
+		if not correct_date or correct_date == si_row.posting_date:
+			continue
+
+		try:
+			frappe.db.set_value(
+				"Sales Invoice",
+				si_row.name,
+				{"posting_date": correct_date, "set_posting_time": 1},
+				update_modified=False,
+			)
+			_delete_accounting_ledger_entries("Sales Invoice", si_row.name)
+			_delete_adv_pl_entries("Sales Invoice", si_row.name)
+			doc = frappe.get_doc("Sales Invoice", si_row.name)
+			_repost_invoices(doc, delete_cancelled_entries=True)
+			frappe.db.commit()
+			fixed += 1
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"OtoBitz sync: failed to backfill posting_date/GL for {si_row.name}")
+			failed += 1
+
+	return {"checked": checked, "fixed": fixed, "failed": failed}
 
 
 @frappe.whitelist()
