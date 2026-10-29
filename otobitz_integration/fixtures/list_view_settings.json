@@ -54,8 +54,8 @@
   "disable_sidebar_stats": 0,
   "docstatus": 0,
   "doctype": "List View Settings",
-  "fields": "[{\"fieldname\": \"payment_type\", \"label\": \"Number\"}, {\"fieldname\": \"paid_to\", \"label\": \"Journal\"}, {\"fieldname\": \"mode_of_payment\", \"label\": \"Payment Method\"}, {\"fieldname\": \"party\", \"label\": \"Party\"}, {\"fieldname\": \"paid_amount\", \"label\": \"Amount\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
-  "modified": "2026-10-21 13:59:10.034470",
+  "fields": "[{\"fieldname\": \"posting_date\", \"label\": \"Date\"}, {\"fieldname\": \"payment_type\", \"label\": \"Payment Type\"}, {\"fieldname\": \"paid_to\", \"label\": \"Journal\"}, {\"fieldname\": \"mode_of_payment\", \"label\": \"Payment Method\"}, {\"fieldname\": \"party\", \"label\": \"Party\"}, {\"fieldname\": \"paid_amount\", \"label\": \"Amount\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
+  "modified": "2026-10-29 12:58:58.684079",
   "name": "Payment Entry",
   "show_tags": 0
  },
