@@ -30,3 +30,24 @@ def set_branch_naming_series(doc, method=None):
 	series_key = f"{branch_code}-INV-"
 	counter = getseries(series_key, 5)
 	doc.name = f"{branch_code}-INV/{now.strftime('%m')}/{now.strftime('%Y')}/{counter}"
+
+
+def set_default_payment_reference(doc, method=None):
+	"""Payment Reference defaults to this invoice's own number - same
+	fill-only-if-empty pattern as sales_order.set_next_service_date, so a
+	manually entered or externally synced reference always wins. Runs on
+	validate (not autoname): doc.name is only final by the time autoname
+	finishes (set_branch_naming_series above), so validate is the first hook
+	where it's safe to read.
+	"""
+	if not doc.get("custom_payment_reference"):
+		doc.custom_payment_reference = doc.name
+
+
+def set_default_accounting_date(doc, method=None):
+	"""Accounting Date mirrors Invoice Date (posting_date) unless the user
+	picked a different value - same fill-only-if-empty pattern as the other
+	defaults in this file.
+	"""
+	if not doc.get("custom_accounting_date"):
+		doc.custom_accounting_date = doc.posting_date

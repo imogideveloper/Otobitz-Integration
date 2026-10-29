@@ -162,7 +162,11 @@ doc_events = {
 		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
 	},
 	"Sales Invoice": {
-		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series"
+		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series",
+		"validate": [
+			"otobitz_integration.sales_invoice.set_default_payment_reference",
+			"otobitz_integration.sales_invoice.set_default_accounting_date"
+		]
 	},
 	"Purchase Order": {
 		"autoname": "otobitz_integration.purchase_order.set_branch_naming_series",
