@@ -361,25 +361,33 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	# custom_otobitz_nofaktur on the Sales Invoice, just the SO-side copy.
 	if si.custom_otobitz_nofaktur:
 		frappe.db.set_value("Sales Order", so_name, "custom_otobitz_faktur_number", si.custom_otobitz_nofaktur)
-		_add_oto_so_api_reference(so_name)
+		_add_oto_so_api_reference(so_name, "Sales Order", "custom_oto_so_api")
+		_add_oto_so_api_reference(si.name, "Sales Invoice", "custom_oto_so", so_name=so_name)
 
 
-def _add_oto_so_api_reference(so_name: str) -> None:
-	"""Mirrors Odoo's "Oto SO API" tracking field (a one-line-per-invoice log
-	reading "SO-xxx - SV-xxx"), on the Oto Integration tab - was previously
-	never populated by this sync at all, despite the Custom Field/child
-	doctype existing. Only called once a faktur_number exists (a Sales Order
+def _add_oto_so_api_reference(
+	docname: str, doctype: str, fieldname: str, so_name: str | None = None
+) -> None:
+	"""Mirrors Odoo's "Oto SO API"/"OTO SO" tracking field (a one-line-per-
+	invoice log reading "SO-xxx - SV-xxx") on the Oto Integration tab -
+	present on both Sales Order and Sales Invoice, but was previously never
+	populated by this sync on either, despite the Custom Field/child doctype
+	existing on both. Only called once a faktur_number exists (a Sales Order
 	can be synced from OtoBitz before its invoice is made, so_number alone
-	isn't the complete reference yet)."""
+	isn't the complete reference yet). so_name defaults to docname itself
+	(the Sales Order case); the Sales Invoice case passes it explicitly
+	since the invoice's own name isn't the Sales Order's."""
 	so_number, faktur_number = frappe.db.get_value(
-		"Sales Order", so_name, ["custom_otobitz_so_number", "custom_otobitz_faktur_number"]
+		"Sales Order",
+		so_name or docname,
+		["custom_otobitz_so_number", "custom_otobitz_faktur_number"],
 	)
 	if not (so_number and faktur_number):
 		return
 
-	so = frappe.get_doc("Sales Order", so_name)
-	so.append("custom_oto_so_api", {"api_reference": f"{so_number} - {faktur_number}"})
-	so.save(ignore_permissions=True)
+	doc = frappe.get_doc(doctype, docname)
+	doc.append(fieldname, {"api_reference": f"{so_number} - {faktur_number}"})
+	doc.save(ignore_permissions=True)
 
 
 @frappe.whitelist()
@@ -458,12 +466,13 @@ def backfill_so_and_faktur_numbers() -> dict:
 @frappe.whitelist()
 def backfill_oto_so_api_references() -> dict:
 	"""One-off: _add_oto_so_api_reference() (the Oto Integration tab's "OTO SO
-	API" log) was added after this sync had already been creating Sales
-	Orders/Invoices for a while - any Sales Order synced before that has
-	so_number/faktur_number but no matching custom_oto_so_api row."""
+	API"/"OTO SO" log, on Sales Order and Sales Invoice respectively) was
+	added after this sync had already been creating Sales Orders/Invoices
+	for a while - any pair synced before that has so_number/faktur_number
+	but no matching child table row on either side."""
 	frappe.only_for("System Manager")
 
-	names = frappe.get_all(
+	so_names = frappe.get_all(
 		"Sales Order",
 		filters={
 			"custom_otobitz_so_number": ["is", "set"],
@@ -471,13 +480,35 @@ def backfill_oto_so_api_references() -> dict:
 		},
 		pluck="name",
 	)
-	added = 0
-	for name in names:
-		existing = frappe.get_all("SO Oto API", filters={"parent": name}, limit=1)
+	so_added = 0
+	for name in so_names:
+		existing = frappe.get_all("SO Oto API", filters={"parent": name, "parenttype": "Sales Order"}, limit=1)
 		if existing:
 			continue
-		_add_oto_so_api_reference(name)
-		added += 1
+		_add_oto_so_api_reference(name, "Sales Order", "custom_oto_so_api")
+		so_added += 1
+
+	si_names = frappe.get_all(
+		"Sales Invoice",
+		filters={"custom_otobitz_wo_number": ["is", "set"], "custom_otobitz_nofaktur": ["is", "set"]},
+		fields=["name", "custom_otobitz_wo_number"],
+	)
+	si_added = 0
+	for row in si_names:
+		existing = frappe.get_all("SO Oto API", filters={"parent": row.name, "parenttype": "Sales Invoice"}, limit=1)
+		if existing:
+			continue
+		so_name = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": row.custom_otobitz_wo_number})
+		if not so_name:
+			continue
+		_add_oto_so_api_reference(row.name, "Sales Invoice", "custom_oto_so", so_name=so_name)
+		si_added += 1
+
 	frappe.db.commit()
 
-	return {"checked": len(names), "rows_added": added}
+	return {
+		"so_checked": len(so_names),
+		"so_rows_added": so_added,
+		"si_checked": len(si_names),
+		"si_rows_added": si_added,
+	}
