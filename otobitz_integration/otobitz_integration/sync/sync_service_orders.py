@@ -394,6 +394,13 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.custom_otobitz_nofaktur = clean(header.get("nofaktur"))
 	si.custom_otobitz_nilaipenerimaan = flt(header.get("nilaipenerimaan"))
 	si.custom_otobitz_sisapiutang = flt(header.get("sisapiutang"))
+	# custom_plat_nomor is declared fetch_from=custom_otobitz_vehicle.nopolisi,
+	# but fetch_from only fires on an interactive field change in the
+	# browser - a no-op here, since custom_otobitz_vehicle itself was just
+	# carried over from the Sales Order by make_sales_invoice()'s mapper,
+	# not changed interactively. Same class of bug as the Sales Order
+	# vehicle fields fixed earlier - set explicitly from the source data.
+	si.custom_plat_nomor = clean(header.get("nopolisi"))
 	si.posting_date = getdate(header.get("tglfaktur") or header.get("tanggal"))
 	# Without this, erpnext's own TransactionBase.validate_posting_time()
 	# (called from Sales Invoice.validate()) silently stomps the explicit
@@ -842,3 +849,45 @@ def backfill_oto_so_api_references() -> dict:
 		"si_checked": len(si_names),
 		"si_rows_added": si_added,
 	}
+
+@frappe.whitelist()
+def backfill_sales_invoice_payment_reference_and_dates() -> dict:
+	"""One-off: set_default_payment_reference()/set_default_accounting_date()
+	(hooks.py validate hooks) and the custom_plat_nomor fix in
+	_create_sales_invoice() only apply going forward - every Sales Invoice
+	synced before those shipped is stuck with all three empty. Uses
+	frappe.db.set_value() (bypasses the submit-lock .save() would hit) like
+	every other backfill in this file."""
+	frappe.only_for("System Manager")
+	import json
+
+	si_rows = frappe.get_all(
+		"Sales Invoice",
+		filters={"custom_otobitz_wo_number": ["is", "set"]},
+		fields=["name", "custom_payment_reference", "custom_accounting_date", "custom_plat_nomor", "posting_date", "custom_otobitz_wo_number"],
+	)
+	checked = fixed = 0
+	for i, si_row in enumerate(si_rows):
+		if i % 50 == 0:
+			renew_sync_lock()
+		checked += 1
+		updates = {}
+		if not si_row.custom_payment_reference:
+			updates["custom_payment_reference"] = si_row.name
+		if not si_row.custom_accounting_date:
+			updates["custom_accounting_date"] = si_row.posting_date
+		if not si_row.custom_plat_nomor:
+			raw = frappe.db.get_value("OtoBitz SO Detail", {"nomorwo": si_row.custom_otobitz_wo_number}, "raw_data")
+			if raw:
+				try:
+					nopolisi = clean(json.loads(raw).get("nopolisi"))
+				except (TypeError, ValueError):
+					nopolisi = None
+				if nopolisi:
+					updates["custom_plat_nomor"] = nopolisi
+		if updates:
+			frappe.db.set_value("Sales Invoice", si_row.name, updates, update_modified=False)
+			fixed += 1
+
+	frappe.db.commit()
+	return {"checked": checked, "fixed": fixed}
