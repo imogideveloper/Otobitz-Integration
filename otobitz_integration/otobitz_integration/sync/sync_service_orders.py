@@ -229,6 +229,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(header.get("kode_cabang"))})
 	teknisi = frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": clean(header.get("kodeteknisi"))})
+	item_cost_center = _resolve_item_cost_center(company, header.get("kode_cabang"))
 	vehicle_type = _link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe"))
 	vehicle_color = _link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna"))
 	# OtoBitz Vehicle Type/Color both autoname by their own `kode` (see their
@@ -356,18 +357,18 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		# saved, tripping ERPNext's own "cannot be zero" validation on save.
 		if qty < 0.01:
 			qty = 1
-		so.append(
-			"items",
-			{
-				"item_code": item_code,
-				"qty": qty,
-				"price_list_rate": price_list_rate,
-				"discount_amount": discount_amount,
-				"rate": price_list_rate - discount_amount,
-				"uom": stock_uom,
-				"conversion_factor": 1,
-			},
-		)
+		item_row = {
+			"item_code": item_code,
+			"qty": qty,
+			"price_list_rate": price_list_rate,
+			"discount_amount": discount_amount,
+			"rate": price_list_rate - discount_amount,
+			"uom": stock_uom,
+			"conversion_factor": 1,
+		}
+		if item_cost_center:
+			item_row["cost_center"] = item_cost_center
+		so.append("items", item_row)
 
 	if not so.items:
 		frappe.throw(f"No resolvable Items for Work Order {nomorwo}")
@@ -475,6 +476,30 @@ def _link_if_exists(doctype: str, value) -> str | None:
 	return None
 
 
+def _resolve_item_cost_center(company: str, kode_cabang: str | None) -> str | None:
+	"""OtoBitz's `kode_cabang` ("003", "101", ... or "AIO" for Head Office)
+	maps 1:1 onto a Cost Center already created under this Company, named
+	"{company_abbr}{kode_cabang} - {company_abbr}" (e.g. "AIO003 - AIO") -
+	except "AIO" itself (Head Office/no specific branch), which maps to the
+	Company's own default "Main - {abbr}" Cost Center instead. Verified
+	against every branch code actually in use (otoexpert.imogi.co.id,
+	2026-10-29): each one already has a matching Cost Center, no gaps.
+
+	Item cost_center previously had no sync-side value at all, so ERPNext's
+	own `default: ":Company"` on the field silently filled in the Company's
+	default Cost Center ("Main - {abbr}") on every single line, regardless
+	of which branch the Work Order actually came from - reported as "cost
+	center di link jangan isinya Main, saya mau sesuai dengan data yang
+	dari OtoBitz integration"."""
+	kode_cabang = clean(kode_cabang)
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	if not abbr:
+		return None
+	if not kode_cabang or kode_cabang.upper() == abbr.upper():
+		return frappe.db.get_value("Company", company, "cost_center")
+	return _link_if_exists("Cost Center", f"{abbr}{kode_cabang} - {abbr}")
+
+
 @frappe.whitelist()
 def backfill_so_and_faktur_numbers() -> dict:
 	"""One-off: custom_otobitz_so_number/custom_otobitz_faktur_number were added
@@ -509,6 +534,58 @@ def backfill_so_and_faktur_numbers() -> dict:
 	frappe.db.commit()
 
 	return {"so_number_rows_matched": so_rows, "faktur_number_rows_matched": faktur_rows}
+
+
+@frappe.whitelist()
+def backfill_item_cost_centers() -> dict:
+	"""One-off: _resolve_item_cost_center() only runs inside _create_sales_order(),
+	so every Sales Order (and the Sales Invoice made from it, which copies
+	cost_center from the SO item at creation time) synced before that fix
+	shipped has every line item sitting on the Company's default "Main"
+	Cost Center regardless of which OtoBitz branch it actually came from -
+	reported as "cost center jangan isinya Main, saya mau sesuai dengan
+	data dari OtoBitz integration".
+
+	Driven by the Sales Order's own already-linked custom_otobitz_branch -
+	no API call needed, same branch code -> Cost Center mapping
+	_resolve_item_cost_center() uses for new syncs. Sales Invoice items are
+	fixed the same way, keyed off their own Sale Order link rather than
+	assumed to equal the SO's value, since an invoice can in principle be
+	edited to a different cost center than the order it came from."""
+	frappe.only_for("System Manager")
+
+	so_fixed = si_fixed = 0
+	for so in frappe.get_all(
+		"Sales Order",
+		filters={"custom_otobitz_branch": ["is", "set"], "custom_otobitz_wo_number": ["is", "set"]},
+		fields=["name", "company", "custom_otobitz_branch"],
+	):
+		kode_cabang = frappe.db.get_value("Branch", so.custom_otobitz_branch, "custom_otobitz_branch_code")
+		cost_center = _resolve_item_cost_center(so.company, kode_cabang)
+		if not cost_center:
+			continue
+
+		so_item_names = frappe.get_all(
+			"Sales Order Item", filters={"parent": so.name, "cost_center": ["!=", cost_center]}, pluck="name"
+		)
+		for item_name in so_item_names:
+			frappe.db.set_value("Sales Order Item", item_name, "cost_center", cost_center, update_modified=False)
+		if so_item_names:
+			so_fixed += 1
+
+		si_item_names = frappe.get_all(
+			"Sales Invoice Item",
+			filters={"sales_order": so.name, "cost_center": ["!=", cost_center]},
+			pluck="name",
+		)
+		for item_name in si_item_names:
+			frappe.db.set_value("Sales Invoice Item", item_name, "cost_center", cost_center, update_modified=False)
+		if si_item_names:
+			si_fixed += 1
+
+		frappe.db.commit()
+
+	return {"sales_orders_fixed": so_fixed, "sales_invoices_fixed": si_fixed}
 
 
 @frappe.whitelist()
