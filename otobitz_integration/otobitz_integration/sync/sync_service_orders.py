@@ -39,6 +39,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	IMOGIBOT_USER,
 	clean,
 	clean_or_none,
+	get_or_create_customer_address,
 	get_or_create_vehicle,
 	log_failed_sync,
 	log_so_detail_rows,
@@ -230,6 +231,20 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	teknisi = frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": clean(header.get("kodeteknisi"))})
 	vehicle_type = _link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe"))
 	vehicle_color = _link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna"))
+	# OtoBitz Vehicle Type/Color both autoname by their own `kode` (see their
+	# doctype JSON), so `vehicle_type`/`vehicle_color` above - needed as-is
+	# for the real Link fields below - are themselves that raw code, not
+	# anything human-readable. The Sales Order's own display fields
+	# (Vehicle Type/Color/Transmission/Manufacture - plain Data/Select
+	# fields, not Links) need the actual name/transmisi/brand looked up
+	# from those two master doctypes instead, or they show a code like
+	# "TYP001" where a vehicle type/colour/brand name is expected.
+	vehicle_type_info = (
+		frappe.db.get_value("OtoBitz Vehicle Type", vehicle_type, ["nama", "transmisi", "brand"], as_dict=True)
+		if vehicle_type
+		else None
+	)
+	vehicle_color_name = frappe.db.get_value("OtoBitz Vehicle Color", vehicle_color, "nama") if vehicle_color else None
 	vehicle = get_or_create_vehicle(
 		header.get("norangka"),
 		nopolisi=header.get("nopolisi"),
@@ -268,6 +283,13 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	if teknisi:
 		so.custom_otobitz_teknisi = teknisi
 	if vehicle:
+		# Labeled "License Plate" on the form, but this is a Link to OtoBitz
+		# Vehicle, which autonames by chassis number (norangka), not by plate
+		# - this field was showing a chassis number in a field titled
+		# "License Plate" ("License Plate nyaa ga seusai"). The real plate
+		# number goes on custom_plat_nomor below, which already had the
+		# correct data from sync all along but sat hidden on the form
+		# (see the custom_plat_nomor Property Setter removed alongside this).
 		so.custom_otobitz_vehicle = vehicle
 	# These mirror OtoBitz Vehicle's own fields and are declared as
 	# fetch_from=custom_otobitz_vehicle.<field> on the Sales Order doctype,
@@ -279,10 +301,36 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	so.custom_nomor_mesin = clean(header.get("nomesin"))
 	so.custom_tahun_kendaraan = clean(header.get("tahunpembuatan"))
 	so.custom_plat_nomor = clean(header.get("nopolisi"))
-	if vehicle_type:
-		so.custom_vehicle_type = vehicle_type
-	if vehicle_color:
-		so.custom_warna = vehicle_color
+	# Vehicle Type/Color (plain Data display fields, not Links) need the
+	# human-readable name - vehicle_type/vehicle_color above are the master
+	# doctypes' own `kode` (their autoname), which is what these two fields
+	# were showing before: a code instead of a name ("vehicle type jangan
+	# angka, sebutin dia merk apa" / "color jangan nomor").
+	if vehicle_type_info and vehicle_type_info.nama:
+		so.custom_vehicle_type = vehicle_type_info.nama
+	if vehicle_color_name:
+		so.custom_warna = vehicle_color_name
+	# custom_transmisi is a Select field (AT/MT/CVT/ALL) - only set when
+	# OtoBitz Vehicle Type's own free-text transmisi value matches one of
+	# those exactly (case-insensitive), rather than risk writing a value
+	# Select's own dropdown doesn't recognize.
+	if vehicle_type_info and vehicle_type_info.transmisi:
+		transmisi = vehicle_type_info.transmisi.strip().upper()
+		if transmisi in ("AT", "MT", "CVT", "ALL"):
+			so.custom_transmisi = transmisi
+	if vehicle_type_info and vehicle_type_info.brand:
+		so.custom_vehicle_manufacture = vehicle_type_info.brand
+	so.custom_pengguna = clean(header.get("pic"))
+	so.custom_keluhan = clean(header.get("keluhan"))
+	so.custom_saran = clean(header.get("saran"))
+	# Address was never synced before - without one linked to the Customer,
+	# these sit empty and ERPNext's display falls back to the bare Customer
+	# name instead of a real address ("Invoice/Delivery Address otomatis
+	# isinya nama customer itu sendiri").
+	address = get_or_create_customer_address(customer, header.get("alamat"))
+	if address:
+		so.customer_address = address
+		so.shipping_address_name = address
 	odometer = flt(header.get("odemeter"))
 	if odometer:
 		so.custom_odometer = odometer

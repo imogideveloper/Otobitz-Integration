@@ -239,6 +239,48 @@ def get_or_create_branch(kode: str | None, nama: str | None) -> str | None:
 	return branch.name
 
 
+def get_or_create_customer_address(customer: str, alamat: str | None) -> str | None:
+	"""Get-or-create a billing+shipping Address for `customer` from OtoBitz's
+	free-text `alamat` field - the caller assigns the returned name to a
+	Sales Order/Invoice's own `customer_address`/`shipping_address_name`
+	directly (same gap `get_or_create_vehicle()`'s own fields fall into on a
+	doc built from Python: Frappe's own `Dynamic Link` auto-fill only kicks
+	in on an interactive form change). Without any Address at all linked to
+	a Customer, those two fields sit empty and ERPNext's own display falls
+	back to showing the Customer's bare name in that slot instead of a real
+	street address - reported as "Invoice/Delivery Address otomatis isinya
+	nama customer".
+
+	One Address per Customer (same shape OtoBitz itself has - one
+	`alamat` string per `customerid`), reused and kept in sync if `alamat`
+	changes on a later Work Order, not recreated each time."""
+	alamat = clean(alamat)
+	if not customer or not alamat:
+		return None
+
+	existing = frappe.db.get_value(
+		"Dynamic Link",
+		{"link_doctype": "Customer", "link_name": customer, "parenttype": "Address"},
+		"parent",
+	)
+	if existing:
+		if frappe.db.get_value("Address", existing, "address_line1") != alamat:
+			frappe.db.set_value("Address", existing, "address_line1", alamat, update_modified=False)
+		return existing
+
+	address = frappe.new_doc("Address")
+	address.address_title = customer
+	address.address_type = "Billing"
+	address.address_line1 = alamat
+	address.city = "-"
+	address.country = frappe.db.get_default("country") or "Indonesia"
+	address.is_primary_address = 1
+	address.is_shipping_address = 1
+	address.append("links", {"link_doctype": "Customer", "link_name": customer})
+	address.insert(ignore_permissions=True, ignore_mandatory=True)
+	return address.name
+
+
 def get_or_create_vehicle(
 	norangka: str | None,
 	*,
