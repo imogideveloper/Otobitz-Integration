@@ -6,8 +6,8 @@
 // dropdown/input per in_standard_filter field - ID, Customer, Company, ...)
 // which gets visually noisy on doctypes with many such fields.
 //
-// Typing shows a dropdown with one suggestion per searchable column ("Cari
-// {field} untuk: {term}") - same idea as Odoo's search bar telling you which
+// Typing shows a dropdown with one suggestion per searchable column
+// ("{field}: {term}") - same idea as Odoo's search bar telling you which
 // field a term could match (Customer? Company? ...). Picking a suggestion
 // doesn't reinvent query plumbing: it just calls the list view's own
 // filter_area.add(), the exact same mechanism the native per-field filters
@@ -178,7 +178,7 @@
 			if (!SEARCH_FIELDS.length) return "";
 			return SEARCH_FIELDS.map(function (f, i) {
 				return '<div class="ob-gs-row' + (i === active_idx ? " is-active" : "") + '" data-idx="' + i + '">'
-					+ "Cari <b>" + esc(f.label) + '</b> untuk: &quot;' + esc(term) + "&quot;</div>";
+					+ "<b>" + esc(f.label) + '</b>: &quot;' + esc(term) + "&quot;</div>";
 			}).join("");
 		}
 
