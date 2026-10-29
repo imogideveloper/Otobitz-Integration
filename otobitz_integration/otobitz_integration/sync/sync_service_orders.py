@@ -512,6 +512,120 @@ def backfill_so_and_faktur_numbers() -> dict:
 
 
 @frappe.whitelist()
+def backfill_so_vehicle_and_contact_fields() -> dict:
+	"""One-off: the vehicle-name/transmission/manufacture/complaints/
+	suggestion/driver/address fixes in _create_sales_order() only run when a
+	Sales Order is first *created* - _sync_one_wo() never calls it again for
+	a Work Order whose Sales Order already exists (see its own `created =
+	False` branch), so every Sales Order synced before this fix shipped is
+	permanently stuck with whatever it had at creation time: Vehicle Type/
+	Color showing a raw code instead of a name, Transmission/Manufacture/
+	Complaints/Suggestion/User-Driver empty, no real Address.
+
+	Vehicle Type/Color/Transmission/Manufacture are re-derived the same way
+	_create_sales_order() does - from the Sales Order's own already-linked
+	custom_otobitz_vehicle, no API call needed.
+
+	Complaints/Suggestion/User-Driver/Address need OtoBitz's own per-Work-
+	Order `keluhan`/`saran`/`pic`/`alamat` strings, which were never stored
+	as their own columns anywhere - they only exist inside the full raw
+	JSON `OtoBitz SO Detail.raw_data` (one row per nomorwo is enough; those
+	four are WO-header-level fields, identical across every line-item row
+	for the same WO). A Work Order whose SO Detail archive doesn't go back
+	far enough (archiving started 2026-10-21, same as see log_so_detail_rows()'s
+	own docstring) has no raw_data to recover these four from and is
+	skipped for just that part - vehicle/transmission fields above don't
+	depend on raw_data and still get fixed regardless."""
+	frappe.only_for("System Manager")
+	import json
+
+	vehicle_fixed = 0
+	for so in frappe.get_all(
+		"Sales Order",
+		filters={"custom_otobitz_vehicle": ["is", "set"]},
+		fields=["name", "custom_otobitz_vehicle"],
+	):
+		vehicle_type, vehicle_color = frappe.db.get_value(
+			"OtoBitz Vehicle", so.custom_otobitz_vehicle, ["vehicle_type", "vehicle_color"]
+		) or (None, None)
+		vehicle_type_info = (
+			frappe.db.get_value("OtoBitz Vehicle Type", vehicle_type, ["nama", "transmisi", "brand"], as_dict=True)
+			if vehicle_type
+			else None
+		)
+		vehicle_color_name = frappe.db.get_value("OtoBitz Vehicle Color", vehicle_color, "nama") if vehicle_color else None
+
+		values = {}
+		if vehicle_type_info and vehicle_type_info.nama:
+			values["custom_vehicle_type"] = vehicle_type_info.nama
+		if vehicle_color_name:
+			values["custom_warna"] = vehicle_color_name
+		if vehicle_type_info and vehicle_type_info.transmisi:
+			transmisi = vehicle_type_info.transmisi.strip().upper()
+			if transmisi in ("AT", "MT", "CVT", "ALL"):
+				values["custom_transmisi"] = transmisi
+		if vehicle_type_info and vehicle_type_info.brand:
+			values["custom_vehicle_manufacture"] = vehicle_type_info.brand
+
+		if values:
+			frappe.db.set_value("Sales Order", so.name, values, update_modified=False)
+			vehicle_fixed += 1
+
+	frappe.db.commit()
+
+	contact_fixed = 0
+	so_rows = frappe.get_all(
+		"Sales Order",
+		filters={"custom_otobitz_wo_number": ["is", "set"]},
+		fields=["name", "customer", "custom_otobitz_wo_number", "custom_pengguna", "custom_keluhan", "custom_saran", "customer_address"],
+	)
+	for i, so in enumerate(so_rows):
+		if i % 200 == 0:
+			renew_sync_lock()
+		# Already has everything this backfill would set - skip the
+		# raw_data lookup entirely for the common case of an SO that was
+		# never missing these to begin with.
+		if so.custom_pengguna and so.custom_keluhan and so.custom_saran and so.customer_address:
+			continue
+
+		raw = frappe.db.get_value(
+			"OtoBitz SO Detail", {"nomorwo": so.custom_otobitz_wo_number}, "raw_data"
+		)
+		if not raw:
+			continue
+		try:
+			header = json.loads(raw)
+		except (TypeError, ValueError):
+			continue
+
+		values = {}
+		if not so.custom_pengguna and clean(header.get("pic")):
+			values["custom_pengguna"] = clean(header.get("pic"))
+		if not so.custom_keluhan and clean(header.get("keluhan")):
+			values["custom_keluhan"] = clean(header.get("keluhan"))
+		if not so.custom_saran and clean(header.get("saran")):
+			values["custom_saran"] = clean(header.get("saran"))
+		if not so.customer_address:
+			address = get_or_create_customer_address(so.customer, header.get("alamat"))
+			if address:
+				values["customer_address"] = address
+				values["shipping_address_name"] = address
+
+		if values:
+			frappe.db.set_value("Sales Order", so.name, values, update_modified=False)
+			contact_fixed += 1
+			frappe.db.commit()
+
+	frappe.db.commit()
+
+	return {
+		"sales_orders_checked": len(so_rows),
+		"vehicle_fields_fixed": vehicle_fixed,
+		"contact_fields_fixed": contact_fixed,
+	}
+
+
+@frappe.whitelist()
 def backfill_oto_so_api_references() -> dict:
 	"""One-off: _add_oto_so_api_reference() (the Oto Integration tab's "OTO SO
 	API"/"OTO SO" log, on Sales Order and Sales Invoice respectively) was
