@@ -80,6 +80,31 @@ def refresh_advance(po_name):
 	frappe.db.set_value("Purchase Order", po_name, "custom_sisa_uang_muka", max(paid - billed, 0), update_modified=False)
 
 
+def track_on_submit(po, method=None):
+	"""Confirmation Date + Approval History for a PO submitted directly
+	(insert() -> submit(), the path every sync module uses - no Workflow
+	Action button involved), where track() above never fires.
+
+	Frappe's own Document._validate() (not this app's code) only moves
+	workflow_state from empty to the submitted Workflow State's name
+	*after* the `validate` hook has already run - so track()'s guard
+	(`if not po.workflow_state: return`) always bails on these, forever,
+	not just for POs synced before some fix: every synced PO takes this
+	exact path. on_submit runs once workflow_state is final and the row
+	is already saved, so this writes straight to the DB instead of
+	appending through the in-memory doc (which would need another save).
+	Guarded by "no existing history row" so a PO that *did* go through a
+	real workflow transition (track() already logged it) isn't double
+	logged.
+	"""
+	if not po.workflow_state or frappe.db.exists("PO Approval History", {"parent": po.name, "parenttype": "Purchase Order"}):
+		return
+	role = frappe.db.get_value("Workflow Transition", {"parent": WF, "next_state": po.workflow_state}, "allowed")
+	_child("PO Approval History", po, "custom_approval_history", role=role, user=frappe.session.user, date=now_datetime(), state=po.workflow_state)
+	if po.workflow_state == "Approved" and not po.custom_confirmation_date:
+		frappe.db.set_value("Purchase Order", po.name, "custom_confirmation_date", now_datetime(), update_modified=False)
+
+
 def on_payment_entry(pe, method=None):
 	for r in pe.get("references") or []:
 		if r.reference_doctype == "Purchase Order":

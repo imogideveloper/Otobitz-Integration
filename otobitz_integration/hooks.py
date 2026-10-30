@@ -171,7 +171,8 @@ doc_events = {
 	"Purchase Order": {
 		"autoname": "otobitz_integration.purchase_order.set_branch_naming_series",
 		"validate": "otobitz_integration.purchase_order.track",
-		"before_update_after_submit": "otobitz_integration.purchase_order.track"
+		"before_update_after_submit": "otobitz_integration.purchase_order.track",
+		"on_submit": "otobitz_integration.purchase_order.track_on_submit"
 	},
 	"Payment Entry": {
 		"on_submit": "otobitz_integration.purchase_order.on_payment_entry",
