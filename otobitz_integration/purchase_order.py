@@ -140,3 +140,48 @@ def backfill_confirmation_date() -> dict:
 		fixed += 1
 	frappe.db.commit()
 	return {"checked": checked, "fixed": fixed}
+
+
+@frappe.whitelist()
+def backfill_naming_series() -> dict:
+	"""One-off: set_branch_naming_series() (above) only started applying to
+	Purchase Orders created after it shipped (2026-10-23 21:49:59) - every
+	PO synced before that is stuck on the stock PUR-ORD-.YYYY.- naming
+	series instead of {branch_code}-P{counter} (confirmed: every single one
+	of 1419 prod POs predates that deploy). Renames each in creation order
+	(oldest first) so the counter sequence reads chronologically, same as
+	if they'd been named correctly from the start. frappe.rename_doc()
+	handles updating every Link field across the system that points at the
+	old name (Sales Order Item.purchase_order, Purchase Invoice
+	Item.purchase_order, etc.) - confirmed via DocField scan this app
+	doesn't store any PO name as a plain-text reference anywhere that
+	would be missed. force=True bypasses Purchase Order's own
+	allow_rename=0 (not block-worthy here: a rename only changes the
+	primary key, nothing about the document's content or its accounting
+	postings, which are keyed by voucher_no at the GL Entry level and
+	updated the same way any other rename updates Link fields)."""
+	frappe.only_for("System Manager")
+	po_rows = frappe.get_all(
+		"Purchase Order",
+		filters={"naming_series": "PUR-ORD-.YYYY.-", "custom_otobitz_branch": ["is", "set"]},
+		fields=["name", "custom_otobitz_branch"],
+		order_by="creation asc",
+	)
+	checked = fixed = skipped = failed = 0
+	for po_row in po_rows:
+		checked += 1
+		branch_code = frappe.db.get_value("Branch", po_row.custom_otobitz_branch, "custom_otobitz_branch_code")
+		if not branch_code:
+			skipped += 1
+			continue
+		new_name = f"{branch_code}-P{getseries(f'{branch_code}-P-', 5)}"
+		try:
+			frappe.rename_doc("Purchase Order", po_row.name, new_name, force=True, show_alert=False, rebuild_search=False)
+			frappe.db.set_value("Purchase Order", new_name, "naming_series", None, update_modified=False)
+			frappe.db.commit()
+			fixed += 1
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"OtoBitz: failed to backfill naming series for Purchase Order {po_row.name}")
+			failed += 1
+	return {"checked": checked, "fixed": fixed, "skipped": skipped, "failed": failed}
