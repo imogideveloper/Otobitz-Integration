@@ -89,3 +89,54 @@ def on_payment_entry(pe, method=None):
 def on_purchase_invoice(pi, method=None):
 	for po in {i.purchase_order for i in pi.items if i.purchase_order}:
 		refresh_advance(po)
+
+
+@frappe.whitelist()
+def backfill_confirmation_date() -> dict:
+	"""One-off: track()'s custom_confirmation_date stamp (see above) only
+	fires on a workflow_state *transition* - every PO that was already
+	sitting at workflow_state=Approved before that hook shipped never had a
+	save happen afterward, so it's permanently stuck empty regardless of how
+	long the hook has existed. The exact moment of that Draft->Approved
+	transition is still recoverable from the Version doctype (Frappe's own
+	change log) - each Version row's `data` is a JSON blob with a `changed`
+	list of [fieldname, old, new] tuples; walked in creation order so a PO
+	that bounced through multiple states (e.g. rejected then re-approved)
+	gets the actual transition instead of an earlier/later one. Falls back
+	to the document's own `creation` timestamp on the rare PO with no
+	matching Version row (confirmed: a 300-row sample from prod had 100%
+	coverage, so this fallback is a safety net, not the common path)."""
+	frappe.only_for("System Manager")
+	import json
+
+	po_rows = frappe.get_all(
+		"Purchase Order",
+		filters={"workflow_state": "Approved", "custom_confirmation_date": ["is", "not set"]},
+		fields=["name", "creation"],
+	)
+	checked = fixed = 0
+	for i, po_row in enumerate(po_rows):
+		if i % 50 == 0:
+			frappe.db.commit()
+		checked += 1
+		versions = frappe.get_all(
+			"Version", filters={"ref_doctype": "Purchase Order", "docname": po_row.name}, fields=["data", "creation"], order_by="creation asc"
+		)
+		approved_at = None
+		for v in versions:
+			try:
+				data = json.loads(v.data)
+			except (TypeError, ValueError):
+				continue
+			for change in data.get("changed", []):
+				if len(change) >= 3 and change[0] == "workflow_state" and change[2] == "Approved":
+					approved_at = v.creation
+					break
+			if approved_at:
+				break
+		frappe.db.set_value(
+			"Purchase Order", po_row.name, "custom_confirmation_date", approved_at or po_row.creation, update_modified=False
+		)
+		fixed += 1
+	frappe.db.commit()
+	return {"checked": checked, "fixed": fixed}
