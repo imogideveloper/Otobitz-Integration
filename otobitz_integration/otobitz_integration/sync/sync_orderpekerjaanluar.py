@@ -140,4 +140,32 @@ def _create_order(nomor: str, row: dict) -> str:
 		branch=branch,
 		sales_order=sales_order,
 		taxes_and_charges_template=TAXES_AND_CHARGES_TEMPLATE,
+		source_document=nomor,
 	)
+
+@frappe.whitelist()
+def backfill_source_document() -> dict:
+	"""One-off: custom_source_document only started getting set on new
+	Purchase Orders once _create_order() above passed it through - every PO
+	already synced before that fix is stuck empty. custom_otobitz_sales_order
+	is only ever set by THIS sync (sync_orderparts.py never touches it), so
+	it's a reliable "came from Pekerjaan Luar" marker to backfill against
+	without re-calling the API - custom_source_document is just the same
+	order_number value these rows already have in custom_otobitz_order_number."""
+	frappe.only_for("System Manager")
+	po_names = frappe.get_all(
+		"Purchase Order",
+		filters={
+			"custom_otobitz_sales_order": ["is", "set"],
+			"custom_source_document": ["in", ["", None]],
+		},
+		pluck="name",
+	)
+	fixed = 0
+	for name in po_names:
+		order_number = frappe.db.get_value("Purchase Order", name, "custom_otobitz_order_number")
+		if order_number:
+			frappe.db.set_value("Purchase Order", name, "custom_source_document", order_number, update_modified=False)
+			fixed += 1
+	frappe.db.commit()
+	return {"checked": len(po_names), "fixed": fixed}

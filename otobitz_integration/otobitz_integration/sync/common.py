@@ -372,6 +372,7 @@ def create_purchase_order(
 	branch: str | None = None,
 	sales_order: str | None = None,
 	taxes_and_charges_template: str | None = None,
+	source_document: str | None = None,
 ):
 	"""Shared builder for both masterdata_orderparts and
 	masterdata_orderpekerjaanluar - both are a Purchase Order to a Supplier,
@@ -379,7 +380,13 @@ def create_purchase_order(
 	sync module's own row-to-item mapping). No stock impact either way
 	(submitting a Purchase Order alone never touches Item quantities -
 	that only happens on a Purchase Receipt, which this integration never
-	creates, consistent with OtoBitz owning physical stock)."""
+	creates, consistent with OtoBitz owning physical stock).
+
+	source_document: only masterdata_orderpekerjaanluar passes this (its own
+	`nomor`, the "GL..." code) - confirmed against OtoBitz's live Odoo that
+	Source Document on a Purchase Order is only ever populated for orders
+	that came from Pekerjaan Luar, never from Order Parts (that source
+	doesn't carry an equivalent reference)."""
 	po = frappe.new_doc("Purchase Order")
 	po.company = company
 	po.supplier = supplier
@@ -390,6 +397,8 @@ def create_purchase_order(
 		po.custom_otobitz_branch = branch
 	if sales_order:
 		po.custom_otobitz_sales_order = sales_order
+	if source_document:
+		po.custom_source_document = source_document
 	set_period_fields(po, transaction_date)
 
 	for item in items:
