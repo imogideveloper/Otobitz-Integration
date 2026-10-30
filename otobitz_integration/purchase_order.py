@@ -44,6 +44,19 @@ def track(po, method=None):
 	role = frappe.db.get_value("Workflow Transition", {"parent": WF, "state": old, "next_state": po.workflow_state}, "allowed") if old else None
 	po.append("custom_approval_history", {"role": role, "user": frappe.session.user, "date": now_datetime(), "state": po.workflow_state})
 
+	# Confirmation Date used to be stamped only from client JS
+	# (after_workflow_action in the PO form script), which only fires when a
+	# human clicks the workflow action button in that exact form session -
+	# an API-driven transition, a bulk action, or the user navigating away
+	# before frm.reload_doc() finishes all skip it entirely (confirmed: POs
+	# exist with workflow_state=Approved and this field still empty). This
+	# hook already observes every old->new workflow_state transition
+	# regardless of how it was triggered, so it's the reliable place to set
+	# it instead - fill-only-if-empty, same pattern as the other
+	# auto-defaulted dates in this app (see sales_invoice.py).
+	if po.workflow_state == "Approved" and not po.custom_confirmation_date:
+		po.custom_confirmation_date = now_datetime()
+
 
 def refresh_advance(po_name):
 	"""Rebuild Advance Payment table + Sisa Uang Muka from submitted Payment Entries."""
