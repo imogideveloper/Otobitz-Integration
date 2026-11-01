@@ -13,7 +13,8 @@
   "analytic_tags",
   "debit",
   "credit",
-  "tax_grids"
+  "tax_grids",
+  "cut_off"
  ],
  "fields": [
   {
@@ -64,6 +65,13 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Tax Grids"
+  },
+  {
+   "columns": 1,
+   "fieldname": "cut_off",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Cut-Off"
   }
  ],
  "grid_page_length": 50,
