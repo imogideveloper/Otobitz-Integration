@@ -49,35 +49,45 @@
 	// .disp-area never needs its own content here.
 	ControlCheck.prototype.set_disp_area = function () {};
 
-	// Align the toggle with every other field's input column, CSS-only.
+	// Align the toggle with every other field's input column, CSS-only, one
+	// rule for the whole Desk (not duplicated per-doctype anymore - this used
+	// to also be copy-pasted into this app's tuned forms (Sales Order Full
+	// Width, Purchase Order Form, Purchase/Sales Invoice Full Width, Payment
+	// Entry Full Width), each with a flex-basis that drifted independently
+	// (clamp(...) in some, auto in others) and fought each other / this rule
+	// for who wins by CSS specificity - that's why the toggle visibly sat at
+	// a different spot form to form despite looking like "the same switch".
+	// Removed from all of them; this is now the only place it's set.
 	//
-	// A prior version of this measured a sibling field's .clearfix width at
+	// A still-earlier version measured a sibling field's .clearfix width at
 	// runtime via getBoundingClientRect() and applied it as an explicit
 	// inline width on .switch-text, re-running on every refresh() (which
 	// fires on every value change, including the click that flips the
-	// switch itself). That measurement could read a slightly different
-	// width each time it re-ran mid-layout-settle, and each run wrote a new
-	// inline width that itself shifted the layout before the next run - on
-	// some pages this compounded into the switch-text column visibly
-	// growing wider with every click instead of converging. CSS only
-	// has no re-run and nothing to compound: it's recomputed by the browser
-	// on layout change, not by re-invoking JS on every value change.
+	// switch itself) - that measurement could read a slightly different
+	// width each time it re-ran mid-layout-settle, compounding into the
+	// column visibly growing wider with every click on some pages.
 	//
-	// clamp(110px,32%,190px) is the same flex-basis already used for
-	// ordinary fields' label column across this app's tuned forms (see
-	// Sales Order Full Width / Purchase Order Form's `.clearfix` rule) -
-	// reusing it here keeps switches visually consistent with those forms'
-	// own labels without depending on being inside one of them. A form with
-	// its own more specific per-doctype CSS for `.switch-text` (e.g.
-	// `.so-hz`, `.po-hz`) still wins via normal CSS specificity, so this is
-	// purely the sane default for every other (untuned) form - Account's
-	// "Disable" toggle included.
+	// clamp(110px,32%,190px) is the exact flex-basis this app's forms use
+	// for an ordinary field's own label column (the `.clearfix` element
+	// built by Frappe's ControlInput.make_wrapper(), frappe/public/js/
+	// frappe/form/controls/base_input.js) - giving switch-text the identical
+	// formula, not just a visually-similar one, is what makes a toggle's
+	// label column match a text field's label column in the same form by
+	// construction, in any viewport, not by coincidence.
+	// Targets both [data-fieldtype="Check"] (skinned as a switch by this file,
+	// above) and [data-fieldtype="Switch"] (ControlSwitch, native Frappe -
+	// already renders this exact switch-control/switch-text markup on its
+	// own, never touched by make_wrapper() above, but needing the identical
+	// alignment rule). A field declared fieldtype "Switch" directly in its
+	// DocType (e.g. Purchase Order's "Ask confirmation") would otherwise
+	// never get this rule at all and keep whatever width the browser's
+	// default flex sizing happens to give switch-text.
 	if (!document.getElementById("ob-switch-align-style")) {
 		const style = document.createElement("style");
 		style.id = "ob-switch-align-style";
 		style.textContent = `
-.frappe-control[data-fieldtype="Check"] .switch-control{justify-content:flex-start !important;gap:8px}
-.frappe-control[data-fieldtype="Check"] .switch-text{flex:0 0 clamp(110px,32%,190px);max-width:320px;box-sizing:border-box}
+.frappe-control[data-fieldtype="Check"] .switch-control,.frappe-control[data-fieldtype="Switch"] .switch-control{justify-content:flex-start !important;gap:8px}
+.frappe-control[data-fieldtype="Check"] .switch-text,.frappe-control[data-fieldtype="Switch"] .switch-text{flex:0 0 clamp(110px,32%,190px);max-width:none;box-sizing:border-box}
 `;
 		document.head.appendChild(style);
 	}
