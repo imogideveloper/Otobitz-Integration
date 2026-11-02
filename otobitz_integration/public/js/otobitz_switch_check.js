@@ -49,44 +49,36 @@
 	// .disp-area never needs its own content here.
 	ControlCheck.prototype.set_disp_area = function () {};
 
-	// Align the toggle with every other field's input column. CSS alone
-	// (flex-basis: clamp(110px,32%,190px), matching ordinary fields' own
-	// .clearfix rule) was tried first and measured correct in isolation, but
-	// produced different *rendered* widths on .switch-text vs. a sibling
-	// .clearfix with the identical rule and identical .form-group width on
-	// some real pages (confirmed via getBoundingClientRect, not just computed
-	// style) - a flexbox layout quirk under this app's container-query-driven
-	// column layout that wasn't worth chasing further. Measuring the actual
-	// sibling .clearfix width at runtime and applying it as an explicit
-	// inline width is exact by construction, in any viewport or content.
-	function align_switch_label_width($wrapper) {
-		const formGroup = $wrapper.closest(".form-column, .section-body");
-		if (!formGroup.length) return;
-		const $referenceClearfix = formGroup.find(".form-group > .clearfix").first();
-		const $referenceInput = formGroup.find(".form-group > .control-input-wrapper").first();
-		if (!$referenceClearfix.length || !$referenceInput.length) return;
-		const clearfixRect = $referenceClearfix[0].getBoundingClientRect();
-		const inputRect = $referenceInput[0].getBoundingClientRect();
-		// Measure the label's own left edge too (not assumed 0) and the real
-		// gap to its input sibling, rather than trusting switch-control's own
-		// gap to match - ordinary fields' .form-group gap turned out to
-		// render wider in practice than the declared 8px (likely an extra
-		// margin on .control-input-wrapper itself), so re-deriving the gap
-		// from these two siblings directly is exact regardless of why.
-		const gap = inputRect.left - clearfixRect.right;
-		const width = clearfixRect.width + Math.max(gap - 8, 0);
-		if (width > 0) {
-			$wrapper.find(".switch-text").css("width", width + "px");
-		}
+	// Align the toggle with every other field's input column, CSS-only.
+	//
+	// A prior version of this measured a sibling field's .clearfix width at
+	// runtime via getBoundingClientRect() and applied it as an explicit
+	// inline width on .switch-text, re-running on every refresh() (which
+	// fires on every value change, including the click that flips the
+	// switch itself). That measurement could read a slightly different
+	// width each time it re-ran mid-layout-settle, and each run wrote a new
+	// inline width that itself shifted the layout before the next run - on
+	// some pages this compounded into the switch-text column visibly
+	// growing wider with every click instead of converging. CSS only
+	// has no re-run and nothing to compound: it's recomputed by the browser
+	// on layout change, not by re-invoking JS on every value change.
+	//
+	// clamp(110px,32%,190px) is the same flex-basis already used for
+	// ordinary fields' label column across this app's tuned forms (see
+	// Sales Order Full Width / Purchase Order Form's `.clearfix` rule) -
+	// reusing it here keeps switches visually consistent with those forms'
+	// own labels without depending on being inside one of them. A form with
+	// its own more specific per-doctype CSS for `.switch-text` (e.g.
+	// `.so-hz`, `.po-hz`) still wins via normal CSS specificity, so this is
+	// purely the sane default for every other (untuned) form - Account's
+	// "Disable" toggle included.
+	if (!document.getElementById("ob-switch-align-style")) {
+		const style = document.createElement("style");
+		style.id = "ob-switch-align-style";
+		style.textContent = `
+.frappe-control[data-fieldtype="Check"] .switch-control{justify-content:flex-start !important;gap:8px}
+.frappe-control[data-fieldtype="Check"] .switch-text{flex:0 0 clamp(110px,32%,190px);max-width:320px;box-sizing:border-box}
+`;
+		document.head.appendChild(style);
 	}
-
-	const refresh = ControlCheck.prototype.refresh;
-	ControlCheck.prototype.refresh = function () {
-		refresh.apply(this, arguments);
-		if (this.$wrapper) {
-			// Sibling fields may not have their own final width yet on the
-			// same tick (layout/webfont settling) - re-measure a frame later.
-			requestAnimationFrame(() => align_switch_label_width(this.$wrapper));
-		}
-	};
 })();
