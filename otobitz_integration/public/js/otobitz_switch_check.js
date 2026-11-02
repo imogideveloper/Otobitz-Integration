@@ -82,12 +82,25 @@
 	// DocType (e.g. Purchase Order's "Ask confirmation") would otherwise
 	// never get this rule at all and keep whatever width the browser's
 	// default flex sizing happens to give switch-text.
+	// Frappe's own label.switch-control ships `gap: 2rem` (32px) between
+	// .switch-text and .switch-visual (frappe/public/scss/common/
+	// controls.scss) - an ordinary field's label/.clearfix sits only 8px
+	// from its input (the gap set on `sel` in every tuned form's own CSS
+	// above). That extra 24px was invisible when switch-text had slack to
+	// spare, but on a label right at the edge of its clamp()'d column width
+	// (e.g. Purchase Order's "Ask confirmation", 17 characters) it was
+	// enough to force a second line - the label itself was never
+	// misaligned, it just had less real width to render in than a same-
+	// column text field's label did. `gap:8px` here matches that 8px
+	// exactly, so switch-text gets the same usable width a text field's
+	// label gets from the same clamp().
 	if (!document.getElementById("ob-switch-align-style")) {
 		const style = document.createElement("style");
 		style.id = "ob-switch-align-style";
 		style.textContent = `
-.frappe-control[data-fieldtype="Check"] .switch-control,.frappe-control[data-fieldtype="Switch"] .switch-control{justify-content:flex-start !important;gap:8px}
+.frappe-control[data-fieldtype="Check"] .switch-control,.frappe-control[data-fieldtype="Switch"] .switch-control{justify-content:flex-start !important;gap:8px !important}
 .frappe-control[data-fieldtype="Check"] .switch-text,.frappe-control[data-fieldtype="Switch"] .switch-text{flex:0 0 clamp(110px,32%,190px);max-width:none;box-sizing:border-box}
+.frappe-control[data-fieldtype="Check"] .label-area,.frappe-control[data-fieldtype="Switch"] .label-area{white-space:nowrap}
 `;
 		document.head.appendChild(style);
 	}
