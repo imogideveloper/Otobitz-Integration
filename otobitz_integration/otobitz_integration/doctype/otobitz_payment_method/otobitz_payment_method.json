@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "field:kode",
+ "creation": "2026-11-03 14:19:42.408833",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_raw",
+  "kode",
+  "nama",
+  "column_break_raw",
+  "aktif",
+  "section_break_mapping",
+  "default_account",
+  "company"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_raw",
+   "fieldtype": "Section Break",
+   "label": "Data OtoBitz (Read-Only, Sinkron Otomatis)"
+  },
+  {
+   "fieldname": "kode",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Kode",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "nama",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_raw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "aktif",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Aktif",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_mapping",
+   "fieldtype": "Section Break",
+   "label": "Mapping Akun (Diisi Manual di ERPNext)"
+  },
+  {
+   "description": "Akun Bank/Cash yang dipakai saat Payment Entry dibuat dari metode pembayaran ini.",
+   "fieldname": "default_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Default Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-03 14:19:42.408833",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz Payment Method",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
