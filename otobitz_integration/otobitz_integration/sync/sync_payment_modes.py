@@ -16,6 +16,9 @@ def sync_payment_modes() -> dict:
 		kode = clean(row.get("kode"))
 		if not kode:
 			continue
+		# ponytail: skip junk/test rows (HTML/quote chars); upgrade path = allowlist of kode pattern
+		if any(c in f"{kode}{row.get('nama') or ''}" for c in "<>'\""):
+			continue
 
 		values = {
 			"mode_of_payment": safe_name(row.get("nama")) or kode,

@@ -175,6 +175,7 @@ doc_events = {
 		"on_submit": "otobitz_integration.purchase_order.track_on_submit"
 	},
 	"Payment Entry": {
+		"validate": "otobitz_integration.payment_entry.set_branch_cash_account",
 		"on_submit": "otobitz_integration.purchase_order.on_payment_entry",
 		"on_cancel": "otobitz_integration.purchase_order.on_payment_entry"
 	},

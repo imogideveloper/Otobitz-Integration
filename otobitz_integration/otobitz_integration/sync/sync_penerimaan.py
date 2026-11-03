@@ -159,6 +159,17 @@ def _create_payment_entry(nomor: str, row: dict) -> str:
 		if bank_cash and bank_cash.get("account"):
 			pe.paid_to = bank_cash["account"]
 
+	# ERPNext hard-requires reference_no/reference_date whenever the paid-to
+	# account is type "Bank" (validate_transaction_reference(), not a
+	# mandatory-field check - ignore_mandatory below doesn't cover it). This
+	# endpoint has no separate bank-transfer-reference field distinct from
+	# the receipt itself, so the receipt's own OtoBitz number/date stands in
+	# for it - same fields already stamped elsewhere on this doc, not a new
+	# source of truth. Harmless to set unconditionally (Cash accounts don't
+	# require it, but having it doesn't hurt).
+	pe.reference_no = nomor
+	pe.reference_date = pe.posting_date
+
 	# `nilaipenerimaan` can be LESS than the invoice's outstanding amount too
 	# (an installment/partial payment, or a bulk receipt the branch recorded
 	# against one invoice while it actually covers several - the module
