@@ -49,6 +49,27 @@
 	// .disp-area never needs its own content here.
 	ControlCheck.prototype.set_disp_area = function () {};
 
+	// imogi_finance/public/css/imogi_finance.bundle.css lays most forms out as a "label | input" grid (each form column is a
+	// grid, each field row joins it through subgrid) and has rules for a Check field's stock markup (.checkbox > label ...)
+	// so the box lands on the input column. This skin's markup (label.switch-control, no .checkbox) never matched them, so
+	// the toggle stayed in the label column, ~36px left of every input. Whether a form is such a grid is decided by that
+	// bundle's page-route selectors, which CSS here cannot repeat - so ask the browser: if the control's parent is a grid,
+	// tag the control, and the rules below (ob-switch-in-grid) put the switch in the input column. Forms that are not
+	// grids (dialogs, other routes) never get the class and keep the flex layout.
+	const refresh = ControlCheck.prototype.refresh;
+	ControlCheck.prototype.refresh = function () {
+		const result = refresh.apply(this, arguments);
+		const mark = () => {
+			const el = this.$wrapper && this.$wrapper[0];
+			const parent = el && el.parentElement;
+			if (parent) el.classList.toggle("ob-switch-in-grid", getComputedStyle(parent).display === "grid");
+		};
+		mark();
+		// first refresh can run before the page-route attribute (which the grid rules key on) is set
+		requestAnimationFrame(mark);
+		return result;
+	};
+
 	// Align the toggle with every other field's input column, CSS-only, one
 	// rule for the whole Desk (not duplicated per-doctype anymore - this used
 	// to also be copy-pasted into this app's tuned forms (Sales Order Full
@@ -101,6 +122,17 @@
 .frappe-control[data-fieldtype="Check"] .switch-control,.frappe-control[data-fieldtype="Switch"] .switch-control{justify-content:flex-start !important;gap:8px !important}
 .frappe-control[data-fieldtype="Check"] .switch-text,.frappe-control[data-fieldtype="Switch"] .switch-text{flex:0 0 clamp(110px,32%,190px);max-width:none;box-sizing:border-box}
 .frappe-control[data-fieldtype="Check"] .label-area,.frappe-control[data-fieldtype="Switch"] .label-area{white-space:nowrap}
+/* Grid forms (see ob-switch-in-grid above): the switch row joins the form's label | input grid through subgrid - label in the
+   label column, the toggle starting exactly where every input starts - and is as tall as an ordinary field row (40px, label
+   centred like the others), so the rows keep an even pitch. */
+@media (min-width:768px){
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"]{min-height:40px}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control{display:grid !important;grid-column:1 / -1;grid-template-columns:subgrid;column-gap:12px;align-items:center;align-self:start;justify-content:normal !important;gap:0 12px !important;height:32px;min-height:32px}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-text{grid-column:1;grid-row:1;flex:none !important;width:auto !important;max-width:none}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .input-area{grid-column:2;grid-row:1}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-visual{grid-column:2;grid-row:1;justify-self:start}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .help:empty{display:none}
+}
 `;
 		document.head.appendChild(style);
 	}
