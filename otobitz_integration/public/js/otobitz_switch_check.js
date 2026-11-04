@@ -122,22 +122,23 @@
 .frappe-control[data-fieldtype="Check"] .switch-control,.frappe-control[data-fieldtype="Switch"] .switch-control{justify-content:flex-start !important;gap:8px !important}
 .frappe-control[data-fieldtype="Check"] .switch-text,.frappe-control[data-fieldtype="Switch"] .switch-text{flex:0 0 clamp(110px,32%,190px);max-width:none;box-sizing:border-box}
 .frappe-control[data-fieldtype="Check"] .label-area,.frappe-control[data-fieldtype="Switch"] .label-area{white-space:nowrap}
-/* Grid forms (see ob-switch-in-grid above): the switch row joins the form's label | input grid through subgrid - label in the
+/* Grid forms (see ob-switch-in-grid above; Check and Switch alike - ControlSwitch extends ControlCheck, so Purchase Order's
+   "Ask confirmation" is tagged too): the switch row joins the form's label | input grid through subgrid - label in the
    label column, the toggle starting exactly where every input starts - and is as tall as an ordinary field row (40px, label
    centred like the others), so the rows keep an even pitch. */
 @media (min-width:768px){
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"]{min-height:40px}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control{display:grid !important;grid-column:1 / -1;grid-template-columns:subgrid;column-gap:12px;align-items:center;align-self:start;justify-content:normal !important;gap:0 12px !important;min-height:32px}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]){min-height:40px}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control{display:grid !important;grid-column:1 / -1;grid-template-columns:subgrid;column-gap:12px;align-items:center;align-self:start;justify-content:normal !important;gap:0 12px !important;min-height:32px}
 /* .switch-text dissolves so its label / help text become grid items of the row. The help text (e.g. Item > Maintain Stock) goes
    under the label across both columns, and contain:inline-size keeps its long one-line width from stretching the label column
    (without it the label column grew to ~740px and pushed the toggle off screen). */
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-text{display:contents}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control .label-area{grid-column:1;grid-row:1}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control .disp-area{display:none}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control .help-box{grid-column:1 / -1;grid-row:2;contain:inline-size;margin:0 0 4px}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .input-area{grid-column:2;grid-row:1}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-visual{grid-column:2;grid-row:1;justify-self:start}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .help:empty{display:none}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control > .switch-text{display:contents}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control .label-area{grid-column:1;grid-row:1}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control .disp-area{display:none}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control .help-box{grid-column:1 / -1;grid-row:2;contain:inline-size;margin:0 0 4px}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control > .input-area{grid-column:2;grid-row:1}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control > .switch-visual{grid-column:2;grid-row:1;justify-self:start}
+.frappe-control.ob-switch-in-grid:is([data-fieldtype="Check"],[data-fieldtype="Switch"]) > .switch-control > .help:empty{display:none}
 }
 `;
 		document.head.appendChild(style);
