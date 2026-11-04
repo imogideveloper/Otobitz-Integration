@@ -127,8 +127,14 @@
    centred like the others), so the rows keep an even pitch. */
 @media (min-width:768px){
 .frappe-control.ob-switch-in-grid[data-fieldtype="Check"]{min-height:40px}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control{display:grid !important;grid-column:1 / -1;grid-template-columns:subgrid;column-gap:12px;align-items:center;align-self:start;justify-content:normal !important;gap:0 12px !important;height:32px;min-height:32px}
-.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-text{grid-column:1;grid-row:1;flex:none !important;width:auto !important;max-width:none}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control{display:grid !important;grid-column:1 / -1;grid-template-columns:subgrid;column-gap:12px;align-items:center;align-self:start;justify-content:normal !important;gap:0 12px !important;min-height:32px}
+/* .switch-text dissolves so its label / help text become grid items of the row. The help text (e.g. Item > Maintain Stock) goes
+   under the label across both columns, and contain:inline-size keeps its long one-line width from stretching the label column
+   (without it the label column grew to ~740px and pushed the toggle off screen). */
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-text{display:contents}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control .label-area{grid-column:1;grid-row:1}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control .disp-area{display:none}
+.frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control .help-box{grid-column:1 / -1;grid-row:2;contain:inline-size;margin:0 0 4px}
 .frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .input-area{grid-column:2;grid-row:1}
 .frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .switch-visual{grid-column:2;grid-row:1;justify-self:start}
 .frappe-control.ob-switch-in-grid[data-fieldtype="Check"] > .switch-control > .help:empty{display:none}
