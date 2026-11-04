@@ -176,6 +176,7 @@ doc_events = {
 		"on_submit": "otobitz_integration.purchase_order.track_on_submit"
 	},
 	"Payment Entry": {
+		"autoname": "otobitz_integration.payment_entry.set_branch_naming_series",
 		"validate": "otobitz_integration.payment_entry.set_branch_cash_account",
 		"on_submit": "otobitz_integration.purchase_order.on_payment_entry",
 		"on_cancel": "otobitz_integration.purchase_order.on_payment_entry"
