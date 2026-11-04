@@ -39,3 +39,43 @@
 	display: none !important;
 }
 
+
+/* List view, ALL doctypes: a wide list scrolls sideways inside the list, with the scrollbar always on screen, and no
+   column is clipped when scrolled to the right.
+
+   1. Scroll owner. Frappe bounds .result-container to the viewport height, but several per-doctype scripts put
+      overflow-x:auto on .result instead - which is as tall as every row, so the horizontal scrollbar sat below the last
+      row (reachable only after scrolling past all of them) and the sticky header never stuck. The container owns both
+      scrollbars; .result must not scroll on its own.
+   2. Row width. imogi_finance/public/css/imogi_finance.bundle.css pins .list-row-container to width:100% on ~20 list
+      routes (and the columns wrapper to min-width:0 !important), so a row can never be wider than the window and every
+      column past the right edge is clipped (blank cells after scrolling right). fit-content makes the container as wide
+      as its columns; min-width:100% keeps lists that already fit exactly as they were. */
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container {
+	overflow-x: auto !important;
+	overflow-y: auto !important;
+}
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container .result {
+	overflow-x: visible !important;
+	overflow-y: visible !important;
+}
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container .result .list-row-container {
+	width: fit-content !important;
+	min-width: 100% !important;
+}
+/* A visible, grabbable horizontal bar (Windows' default is a thin one). */
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container::-webkit-scrollbar {
+	height: 12px;
+	width: 12px;
+}
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container::-webkit-scrollbar-track {
+	background: #eef1f5;
+}
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container::-webkit-scrollbar-thumb {
+	background: #b4bfcb;
+	border-radius: 6px;
+	border: 2px solid #eef1f5;
+}
+[data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container::-webkit-scrollbar-thumb:hover {
+	background: #8d99a6;
+}
