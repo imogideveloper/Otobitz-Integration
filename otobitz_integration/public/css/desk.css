@@ -80,16 +80,19 @@
 	background: #8d99a6;
 }
 
-/* Sales Invoice / Purchase Invoice "Journal Items" tab: nothing is cut off. Long account and branch names wrap onto a second line instead of ending in "...", and the row grows with its text. */
-[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row > .data-row {
+/* Sales Invoice / Purchase Invoice "Journal Items" tab and the Journal Entry lines grid: nothing is cut off. Long account and branch names wrap onto a second line instead of ending in "...", and the row grows with its text. */
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row > .data-row,
+[data-fieldname="accounts"] .grid-body .rows .grid-row > .data-row {
 	height: auto !important;
 	min-height: 40px;
 }
-[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row > .data-row > .col {
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row > .data-row > .col,
+[data-fieldname="accounts"] .grid-body .rows .grid-row > .data-row > .col {
 	height: auto !important;
 	align-self: stretch;
 }
-[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row .static-area {
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row .static-area,
+[data-fieldname="accounts"] .grid-body .rows .grid-row .static-area {
 	white-space: normal !important;
 	overflow: visible !important;
 	text-overflow: clip !important;
@@ -97,7 +100,8 @@
 	height: auto !important;
 	line-height: 1.35;
 }
-[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row .grid-static-col {
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row .grid-static-col,
+[data-fieldname="accounts"] .grid-body .rows .grid-row .grid-static-col {
 	height: auto !important;
 }
 

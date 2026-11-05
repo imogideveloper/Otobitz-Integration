@@ -177,6 +177,9 @@ def create_cogs_entry(doc, method=None):
 			"posting_date": doc.posting_date,
 			"title": _cogs_remark(doc.name),
 			"user_remark": _cogs_remark(doc.name),
+			"cheque_no": doc.name,
+			"cheque_date": doc.posting_date,
+			"custom_oto_so": doc.get("custom_otobitz_wo_number"),
 			"custom_otobitz_branch": doc.get("custom_otobitz_branch"),
 			"accounts": accounts,
 		})

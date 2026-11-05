@@ -27,3 +27,14 @@ def set_branch_naming_series(doc, method=None):
 	year = getdate(doc.get("posting_date")).year
 	counter = getseries(f"{branch_code}-JV-{year}-", 5)
 	doc.name = f"{branch_code}-JV-{year}-{counter}"
+
+
+def fill_line_branch(doc, method=None):
+	"""Odoo shows a Branch column on every journal line. Each line takes the
+	entry's own Branch unless a line already has its own (fill-only-if-empty)."""
+	branch = doc.get("custom_otobitz_branch")
+	if not branch:
+		return
+	for row in doc.get("accounts") or []:
+		if not row.get("custom_branch"):
+			row.custom_branch = branch
