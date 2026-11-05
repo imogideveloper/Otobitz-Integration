@@ -390,8 +390,10 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 
 def _invoice_contact_values(header: dict) -> dict:
 	"""NIK / Email / Phone / Address on the Sales Invoice, taken
-	from this Work Order's own OtoBitz payload (nik, email, nohp|notlp,
-	alamat). Only fields that actually carry a value are
+	from this Work Order's own OtoBitz payload (nik, email, notlp, alamat).
+	Phone is notlp only, not nohp: checked against 884 October Odoo invoices,
+	Odoo's Phone equals notlp in all 42 invoices where it is set, and stays
+	blank where only nohp exists. Only fields that actually carry a value are
 	returned, so a blank never overwrites anything. These can't rely on the
 	fields' fetch_from (customer.*): that only fires on an interactive
 	change in the browser, and the Customer built by _resolve_customer()
@@ -400,7 +402,7 @@ def _invoice_contact_values(header: dict) -> dict:
 	values = {
 		"custom_nik": clean_or_none(header.get("nik")),
 		"custom_email": clean_email(header.get("email")),
-		"custom_phone": clean_phone(clean_or_none(header.get("nohp")) or clean_or_none(header.get("notlp"))),
+		"custom_phone": clean_phone(clean_or_none(header.get("notlp"))),
 		"custom_address": clean_or_none(header.get("alamat")),
 	}
 	return {k: v for k, v in values.items() if v}
