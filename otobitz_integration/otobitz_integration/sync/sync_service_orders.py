@@ -32,15 +32,13 @@ from collections import defaultdict
 import frappe
 from erpnext.controllers.accounts_controller import get_taxes_and_charges
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
 	IMOGIBOT_USER,
 	clean,
-	clean_email,
 	clean_or_none,
-	clean_phone,
 	get_or_create_customer_address,
 	get_or_create_vehicle,
 	log_failed_sync,
@@ -334,8 +332,12 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	if address:
 		so.customer_address = address
 		so.shipping_address_name = address
-	odometer = flt(header.get("odemeter"))
-	if odometer:
+	# custom_odometer is an Int field too - same garbage-value overflow as
+	# OtoBitz Vehicle's last_odometer (see get_or_create_vehicle()'s own
+	# comment), guarded the same way rather than crashing the whole WO sync
+	# over one cosmetic field.
+	odometer = cint(header.get("odemeter"))
+	if 0 < odometer <= 9_999_999:
 		so.custom_odometer = odometer
 
 	for row in wo_rows:
@@ -388,26 +390,6 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	return so.name
 
 
-def _invoice_contact_values(header: dict) -> dict:
-	"""NIK / Email / Phone / Address on the Sales Invoice, taken
-	from this Work Order's own OtoBitz payload (nik, email, notlp, alamat).
-	Phone is notlp only, not nohp: checked against 884 October Odoo invoices,
-	Odoo's Phone equals notlp in all 42 invoices where it is set, and stays
-	blank where only nohp exists. Only fields that actually carry a value are
-	returned, so a blank never overwrites anything. These can't rely on the
-	fields' fetch_from (customer.*): that only fires on an interactive
-	change in the browser, and the Customer built by _resolve_customer()
-	never gets email/phone/address anyway.
-	"""
-	values = {
-		"custom_nik": clean_or_none(header.get("nik")),
-		"custom_email": clean_email(header.get("email")),
-		"custom_phone": clean_phone(clean_or_none(header.get("notlp"))),
-		"custom_address": clean_or_none(header.get("alamat")),
-	}
-	return {k: v for k, v in values.items() if v}
-
-
 def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si = make_sales_invoice(so_name, ignore_permissions=True)
 	si.update_stock = 0
@@ -423,8 +405,6 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	# not changed interactively. Same class of bug as the Sales Order
 	# vehicle fields fixed earlier - set explicitly from the source data.
 	si.custom_plat_nomor = clean(header.get("nopolisi"))
-	for fieldname, value in _invoice_contact_values(header).items():
-		si.set(fieldname, value)
 	si.posting_date = getdate(header.get("tglfaktur") or header.get("tanggal"))
 	# Without this, erpnext's own TransactionBase.validate_posting_time()
 	# (called from Sales Invoice.validate()) silently stomps the explicit

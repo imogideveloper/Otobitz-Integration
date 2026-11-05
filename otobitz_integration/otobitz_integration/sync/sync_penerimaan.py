@@ -123,9 +123,33 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	return True
 
 
+def _resolve_sales_invoice(nofaktur: str) -> str | None:
+	"""Direct nofaktur match first; if that's not found, the invoice this
+	receipt's `noreferensi` names may since have been voided and reissued
+	under a different nofaktur at the OtoBitz end (same Work Order, new
+	invoice number - confirmed live: `statuswo` for several of these flips
+	to "BATAL INVOICE" with a new `nofaktur` on the current API response,
+	while our side still only knows the original one). The Work Order number
+	isn't on the penerimaanuang row itself, but OtoBitz SO Detail's raw
+	archive still has the row that was fetched carrying this exact (now
+	stale) nofaktur, which gives us nomorwo - and from there, whatever Sales
+	Invoice currently exists for that Work Order (the reissued one)."""
+	si_name = frappe.db.get_value("Sales Invoice", {"custom_otobitz_nofaktur": nofaktur})
+	if si_name:
+		return si_name
+
+	so_detail = frappe.db.sql(
+		"""select nomorwo from `tabOtoBitz SO Detail` where raw_data like %s limit 1""",
+		(f"%{nofaktur}%",),
+	)
+	if not so_detail:
+		return None
+	return frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": so_detail[0][0]})
+
+
 def _create_payment_entry(nomor: str, row: dict) -> str:
 	nofaktur = clean(row.get("noreferensi"))
-	si_name = nofaktur and frappe.db.get_value("Sales Invoice", {"custom_otobitz_nofaktur": nofaktur})
+	si_name = nofaktur and _resolve_sales_invoice(nofaktur)
 	if not si_name:
 		frappe.throw(f"No Sales Invoice found for nofaktur {nofaktur!r} (receipt {nomor})")
 
@@ -151,6 +175,7 @@ def _create_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
+	pe.custom_otobitz_endpoint = "penerimaanuang"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:

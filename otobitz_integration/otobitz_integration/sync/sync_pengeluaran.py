@@ -29,9 +29,17 @@ a name match can mismatch on typos/case or match an unrelated Supplier that
 happens to share a name. Revisit once a real `namasupplier` row exists to
 confirm against.
 
-The destination Bank account is a placeholder ("Bank - O") stamped on every
-Contra entry, since none of those rows name a specific bank - point this at
-a real per-branch bank account once one exists in the Chart of Accounts.
+Despite the name, a "PEMBAYARAN SETORAN TUNAI" row is NOT a bank deposit -
+confirmed against all 66 real rows that failed under the original
+hardcoded-placeholder account: every single one carries the exact same
+`kodeaccount`/`namaaccount` ("1002102100" / "Cash on Hand: Service"), which
+matches a real, already-existing Account by `account_number` - a shared
+cash-pooling/clearing account, not a bank. So the Contra entry is: credit
+the branch's own physical cash-on-hand account (there's no direct Branch ->
+Account link in this schema, so it's matched by the branch code embedded in
+the account name, e.g. "CASH ON HAND 109 RAWASARI"), debit whatever account
+this row's own `kodeaccount` resolves to. Both sides come straight from data
+OtoBitz already sends - no placeholder, no guessing which bank.
 """
 
 import frappe
@@ -50,7 +58,6 @@ from otobitz_integration.otobitz_integration.sync.common import (
 WATERMARK_FIELD = "last_pengeluaran_sync_date"
 OVERLAP_DAYS = 3
 CHUNK_DAYS = 2
-PLACEHOLDER_BANK_ACCOUNT = "Bank - O"
 
 
 def get_sync_window() -> tuple[str, str]:
@@ -143,10 +150,35 @@ def _sync_one_expense(nomor: str, row: dict) -> bool:
 
 def _create_journal_entry(nomor: str, row: dict) -> str:
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
-	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(row.get("kode_cabang"))})
+	branch_code = clean(row.get("kode_cabang"))
+	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": branch_code})
 	amount = flt(row.get("nilaipembayaran"))
-	cash_account = frappe.db.get_value("Company", company, "default_cash_account")
 	remark = clean(row.get("keterangan")) or clean(row.get("memo")) or nomor
+
+	# The branch's own physical cash-on-hand account (credited - cash leaves
+	# the branch). No Branch -> Account link exists in this schema, so it's
+	# matched by the branch code embedded in the account name, matching the
+	# "CASH ON HAND <code> <branch name>" naming already in use for every
+	# branch this endpoint has been seen to reference.
+	source_cash_account = frappe.db.get_value(
+		"Account",
+		{
+			"company": company,
+			"account_type": "Cash",
+			"is_group": 0,
+			"account_name": ["like", f"CASH ON HAND {branch_code} %"],
+		},
+	)
+	if not source_cash_account:
+		frappe.throw(f"No branch cash account found for kode_cabang {branch_code!r} (expense {nomor})")
+
+	# The destination this cash is pooled into - resolved from the row's own
+	# kodeaccount (matched against Account.account_number), not guessed.
+	dest_account = frappe.db.get_value(
+		"Account", {"company": company, "account_number": clean(row.get("kodeaccount"))}
+	)
+	if not dest_account:
+		frappe.throw(f"No Account found matching kodeaccount {row.get('kodeaccount')!r} (expense {nomor})")
 
 	je = frappe.new_doc("Journal Entry")
 	je.voucher_type = "Contra Entry"
@@ -154,12 +186,13 @@ def _create_journal_entry(nomor: str, row: dict) -> str:
 	je.posting_date = getdate(row.get("tanggal"))
 	je.user_remark = remark
 	je.custom_otobitz_receipt_number = nomor
+	je.custom_otobitz_endpoint = "pengeluaranuang"
 	if branch:
 		je.custom_otobitz_branch = branch
 	set_period_fields(je, je.posting_date)
 
-	je.append("accounts", {"account": cash_account, "credit_in_account_currency": amount})
-	je.append("accounts", {"account": PLACEHOLDER_BANK_ACCOUNT, "debit_in_account_currency": amount})
+	je.append("accounts", {"account": source_cash_account, "credit_in_account_currency": amount})
+	je.append("accounts", {"account": dest_account, "debit_in_account_currency": amount})
 
 	je.insert(ignore_permissions=True, ignore_mandatory=True)
 	je.submit()
@@ -203,6 +236,7 @@ def _create_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
+	pe.custom_otobitz_endpoint = "pengeluaranuang"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:

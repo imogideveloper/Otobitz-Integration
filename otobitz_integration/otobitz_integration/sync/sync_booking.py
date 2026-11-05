@@ -134,6 +134,7 @@ def _create_advance_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
+	pe.custom_otobitz_endpoint = "penerimaanuangmukabooking"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:
@@ -141,6 +142,15 @@ def _create_advance_payment_entry(nomor: str, row: dict) -> str:
 		bank_cash = get_bank_cash_account(pe, None)
 		if bank_cash and bank_cash.get("account"):
 			pe.paid_to = bank_cash["account"]
+
+	# ERPNext hard-requires reference_no/reference_date whenever the paid-to
+	# account is type "Bank" (validate_transaction_reference(), not a
+	# mandatory-field check - ignore_mandatory above doesn't cover it). Same
+	# fix as sync_penerimaan.py's _create_payment_entry() - this endpoint has
+	# no separate bank-transfer-reference field either, so the receipt's own
+	# number/date stand in for it.
+	pe.reference_no = nomor
+	pe.reference_date = pe.posting_date
 
 	pe.insert(ignore_permissions=True, ignore_mandatory=True)
 	pe.submit()

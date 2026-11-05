@@ -15,7 +15,7 @@ import re
 
 import frappe
 from erpnext.controllers.accounts_controller import get_taxes_and_charges
-from frappe.utils import flt, getdate
+from frappe.utils import cint, flt, getdate
 
 _MONTH_NAMES = [
 	"", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -299,6 +299,17 @@ def get_or_create_vehicle(
 	norangka = clean(norangka)
 	if not norangka:
 		return None
+
+	# last_odometer is an Int (32-bit) field, and OtoBitz occasionally sends a
+	# garbage value nowhere near a real car's reading (e.g. 82391194093 km -
+	# likely a source-side data glitch, not a unit mixup) that overflows it
+	# and throws, taking down the whole Work Order sync over one cosmetic
+	# field. Dropped rather than stored if it's not a plausible odometer
+	# reading, same as clean_or_none's "don't guess, don't crash" approach
+	# elsewhere in this module.
+	odometer = cint(odometer)
+	if not (0 < odometer <= 9_999_999):
+		odometer = None
 
 	values = {
 		"nopolisi": clean(nopolisi),

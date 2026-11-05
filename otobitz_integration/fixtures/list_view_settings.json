@@ -55,7 +55,7 @@
   "docstatus": 0,
   "doctype": "List View Settings",
   "fields": "[{\"fieldname\": \"posting_date\", \"label\": \"Date\"}, {\"fieldname\": \"paid_to\", \"label\": \"Journal\"}, {\"fieldname\": \"mode_of_payment\", \"label\": \"Payment Method\"}, {\"fieldname\": \"party\", \"label\": \"Party\"}, {\"fieldname\": \"paid_amount\", \"label\": \"Amount\"}, {\"fieldname\": \"status_field\", \"label\": \"Status\"}]",
-  "modified": "2026-11-04 14:23:55.169588",
+  "modified": "2026-11-04 14:27:58.199536",
   "name": "Payment Entry",
   "show_tags": 0
  },
