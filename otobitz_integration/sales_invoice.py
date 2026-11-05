@@ -64,3 +64,30 @@ def set_default_payment_terms(doc, method=None):
 	if doc.docstatus == 0 and not doc.get("payment_terms_template") and not doc.get("payment_schedule"):
 		if frappe.db.exists("Payment Terms Template", "Immediate Payment"):
 			doc.payment_terms_template = "Immediate Payment"
+
+
+def populate_journal_items(doc, method=None):
+	"""Mirror the invoice's real GL Entries into custom_journal_items for
+	Odoo-style display (same idea as purchase_invoice.populate_journal_items).
+	GL Entry has no Branch / Analytic Tags column, so Branch comes from the
+	invoice itself and Analytic Tags is derived from each line's cost_center.
+	Runs on_submit, after ERPNext's own make_gl_entries(). Display only: it
+	reads the ledger and never writes to it.
+	"""
+	frappe.db.delete("SI Journal Item", {"parent": doc.name, "parenttype": "Sales Invoice"})
+	rows = frappe.db.sql(
+		"""select account, debit, credit, cost_center, remarks
+		from `tabGL Entry`
+		where voucher_type = 'Sales Invoice' and voucher_no = %s and is_cancelled = 0
+		order by creation, name""",
+		doc.name, as_dict=True,
+	)
+	branch_label = doc.get("custom_otobitz_branch") or ""
+	for i, r in enumerate(rows, 1):
+		remarks = r.remarks if r.remarks and r.remarks != "No Remarks" else ""
+		frappe.get_doc({
+			"doctype": "SI Journal Item", "parent": doc.name, "parenttype": "Sales Invoice",
+			"parentfield": "custom_journal_items", "idx": i,
+			"account": r.account, "branch": branch_label, "label": remarks,
+			"analytic_tags": r.cost_center or "", "debit": r.debit, "credit": r.credit,
+		}).insert(ignore_permissions=True)
