@@ -279,7 +279,136 @@ body.oto-fin-page[data-route^="query-report/"] .main-section:has(.oto-fin-report
 	padding-bottom: 0 !important;
 }
 
-/* the Account column's title centred over the names, as on the auto_trust site */
-body.oto-fin-page #page-query-report .oto-fin-report .dt-cell__content--header-0 {
+/* the Account column as on the auto_trust site: its names and title a size smaller (13px), the title centred */
+body.oto-fin-page #page-query-report .oto-fin-report .datatable :is(.dt-cell__content--col-0, .dt-cell__content--header-0) {
+	padding-left: 2px;
+	padding-right: 2px;
+	font-size: var(--text-sm);
 	text-align: center;
+	text-overflow: clip;
+}
+
+/* the filter fields' box as the auto_trust site's: a little inset, a line under it before the cards */
+body.oto-fin-page #page-query-report .page-form.oto-fin-filters > .oto-filter-fields {
+	padding: 4px 4px 10px;
+	margin-bottom: 6px;
+	border-bottom: 1px solid var(--border-color);
+}
+
+/* every filter as wide as its grid column (a list's box, Cost Center / Project, no wider than the others) */
+body.oto-fin-page #page-query-report .page-form.oto-fin-filters > .oto-filter-fields > .frappe-control {
+	width: auto !important;
+	min-width: 0 !important;
+	max-width: 100% !important;
+}
+
+/* the switches as the auto_trust site's: the switch first (40x20, grey knob left when off, white knob right on blue
+   when on), its label after it on one line, 13px; one under the other 33px apart. otobitz_switch_check.js draws its
+   own track (.switch-visual) after the label: hidden here, the checkbox itself drawn as the switch instead */
+body.oto-fin-page #page-query-report .oto-filter-checks > .frappe-control[data-fieldtype="Check"] {
+	height: 33.5px;
+	min-height: 0;
+	margin: 0 !important;
+	padding: 0 !important;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks label.switch-control {
+	display: flex !important;
+	max-width: max-content;
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 8px !important;
+	width: auto !important;
+	min-height: 27.5px;
+	margin: 0;
+	padding: 3px 0 0;
+	cursor: pointer;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks label.switch-control > .input-area {
+	order: -1;
+	position: static !important;
+	display: inline-flex !important;
+	width: auto !important;
+	height: auto !important;
+	overflow: visible !important;
+	clip: auto !important;
+	clip-path: none !important;
+	flex: none;
+	margin: 0;
+	padding: 0;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks label.switch-control > .switch-visual {
+	display: none !important;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks label.switch-control > .switch-text {
+	width: auto !important;
+	flex: none;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks .label-area {
+	color: var(--text-color);
+	font-size: var(--text-sm, 13px) !important;
+	line-height: 20px;
+	white-space: nowrap;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks input[type="checkbox"] {
+	position: static !important;
+	opacity: 1 !important;
+	appearance: none;
+	-webkit-appearance: none;
+	flex: none;
+	width: 40px !important;
+	height: 20px !important;
+	margin: 0 !important;
+	border: 1px solid var(--gray-600, #616161);
+	border-radius: 10px;
+	background-color: var(--fg-color, #fff);
+	background-image: radial-gradient(circle, var(--gray-600, #616161) 0 6px, transparent 6.5px);
+	background-size: 18px 18px;
+	background-position: 1px 50%;
+	background-repeat: no-repeat;
+	box-shadow: none;
+	cursor: pointer;
+	pointer-events: auto;
+	transition: background-position 0.15s, background-color 0.15s, border-color 0.15s;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks input[type="checkbox"]:checked {
+	border-color: var(--oto-fin-hover-bar);
+	background-color: var(--oto-fin-hover-bar);
+	background-image: radial-gradient(circle, #fff 0 6px, transparent 6.5px);
+	background-position: calc(100% - 1px) 50%;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks input[type="checkbox"]:focus {
+	box-shadow: none;
+}
+
+body.oto-fin-page #page-query-report .oto-filter-checks input[type="checkbox"]:focus-visible {
+	outline: 2px solid var(--oto-fin-hover-bar);
+	outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.oto-fin-page #page-query-report .oto-filter-checks input[type="checkbox"] {
+		transition: none;
+	}
+}
+
+/* the toolbar as the auto_trust site's: Financial Statements, Show / Hide Chart, then Actions */
+body.oto-fin-page[data-route^="query-report/"] .page-head .custom-actions {
+	display: flex;
+	align-items: center;
+}
+
+body.oto-fin-page[data-route^="query-report/"] .page-head .custom-actions > .inner-group-button[data-label="Actions"] {
+	order: 2;
+}
+
+body.oto-fin-page[data-route^="query-report/"] .page-head .custom-actions > button:is([data-label="Show%20Chart"], [data-label="Hide%20Chart"]) {
+	order: 1;
 }

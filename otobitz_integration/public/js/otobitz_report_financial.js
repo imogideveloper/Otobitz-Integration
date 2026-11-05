@@ -199,9 +199,17 @@
 		}
 		prepare_statement(this);
 		const result = render_datatable.apply(this, arguments);
+		keep_widths(this);
 		watch_height(this);
 		return result;
 	};
+
+	// imogi_finance's report_fit_width.js (loaded after this app) stretches every query report's columns to the
+	// page's edge after each draw, over these widths (the room kept on the right, the amounts' AMOUNT_MAX). It leaves
+	// a table alone whose columns' base widths (_imf_base, set only when missing) come to nothing: so, here, 0
+	function keep_widths(report) {
+		for (const column of report.datatable?.datamanager?.getColumns?.() || []) column._imf_base = 0;
+	}
 
 	// the rows the datatable shows, without the report's own total row (the datatable draws it in its footer)
 	function rows_shown(report) {
@@ -221,7 +229,10 @@
 			box.style.setProperty("--oto-fin-rows", `${Math.max(200, Math.floor(now - over - 1))}px`);
 			changed = true;
 		}
-		if (changed) report.datatable.refresh(rows_shown(report), report.columns.filter((c) => !c.hidden));
+		if (changed) {
+			report.datatable.refresh(rows_shown(report), report.columns.filter((c) => !c.hidden));
+			keep_widths(report);
+		}
 	}
 
 	function watch_height(report) {
@@ -311,6 +322,7 @@
 				fit_height(report);
 				fit_columns(report);
 				report.datatable?.refresh(report.data, report.columns.filter((c) => !c.hidden));
+				keep_widths(report);
 			}
 		}, 200)
 	);
