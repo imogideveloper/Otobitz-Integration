@@ -181,3 +181,8 @@
 	flex: 0 0 190px !important;
 	min-width: 0 !important;
 }
+
+/* Page screenshot (otobitz_screenshot.js): no scrollbars in the captured image, e.g. on a long tab bar. */
+body.oto-capturing * {
+	scrollbar-width: none !important;
+}
