@@ -45,6 +45,7 @@ app_include_js = [
 	"/assets/otobitz_integration/js/otobitz_switch_check.js?v=8",
 	"/assets/otobitz_integration/js/otobitz_global_search.js?v=13",
 	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=2",
+	"/assets/otobitz_integration/js/otobitz_grid_fit.js?v=2",
 ]
 
 # include js, css files in header of web template
