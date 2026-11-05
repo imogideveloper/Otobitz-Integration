@@ -67,6 +67,25 @@ def reapply_fixtures():
 	frappe.db.commit()
 
 
+# Desktop (/desk) modules an auto workshop (bengkel) has no use for (user, 2026-11-05): hidden on every migrate,
+# since migrate syncs the standard icons back from the apps' files. Still reachable by search / URL.
+HIDDEN_DESKTOP_ICONS = ("Framework", "Frappe Framework", "Manufacturing", "Subcontracting", "Projects")
+
+
+def hide_desktop_icons():
+	changed = False
+	# (an app icon's children too: with Framework hidden the desk lifts its Users / System / Build... onto the page)
+	children = frappe.get_all("Desktop Icon", filters={"parent_icon": ["in", HIDDEN_DESKTOP_ICONS]}, pluck="name")
+	for name in (*HIDDEN_DESKTOP_ICONS, *children):
+		if frappe.db.exists("Desktop Icon", name) and not frappe.db.get_value("Desktop Icon", name, "hidden"):
+			frappe.db.set_value("Desktop Icon", name, "hidden", 1, update_modified=False)
+			changed = True
+	if changed:
+		frappe.db.commit()
+	# (the desk caches each user's icons)
+	frappe.cache.delete_key("desktop_icons")
+
+
 def ensure_salesperson_default():
 	"""One-off (idempotent): Sales Order-custom_salesperson defaults to the
 	logged-in user ("__user") for anyone building a Sales Order by hand in

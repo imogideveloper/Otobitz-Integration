@@ -1,11 +1,55 @@
-/* Workspace/module icons on /desk truncate long labels ("Manufactur...",
-   "OtoBitz Inte...") with the stock single-line + text-overflow:ellipsis -
-   letting them wrap instead shows the full name without widening the grid. */
-.icon-title {
-	white-space: normal !important;
+/* Desktop (/desk): module names on one line, in full - never wrapped, never "..." (user, 2026-11-05: "jangan ada
+   nama module yg ke wraptext"). Frappe gives each icon 127px with 16px padding a side, so names over ~93px
+   (Organization, Manufacturing, Subcontracting, OtoBitz Integration, ERPNext Settings) were cut or wrapped; the
+   padding goes, the box stays 127px, and neither the page nor a folder's popup cuts or wraps the name. */
+.desktop-icon {
+	padding-left: 0 !important;
+	padding-right: 0 !important;
+}
+.desktop-icon .icon-caption {
+	text-wrap: nowrap !important;
+}
+.desktop-icon .icon-title {
 	overflow: visible !important;
-	text-overflow: unset !important;
-	line-height: 1.2;
+	text-overflow: clip !important;
+	white-space: nowrap !important;
+}
+/* a folder's popup (Accounting: "Share Management", "Financial Reports"): wider boxes, and a popup wide enough
+   for its 4 columns of them */
+.modal-dialog#desktop-modal {
+	width: fit-content;
+	max-width: calc(100vw - 32px);
+}
+.modal-body .icons .desktop-icon {
+	width: 152px !important;
+}
+@media screen and (max-width: 570px) {
+	.desktop-icon .icon-title {
+		font-size: var(--text-sm);
+	}
+	.modal-body .icons .desktop-icon {
+		width: 100% !important;
+	}
+	.modal-body.desktop-modal-body {
+		width: 100% !important;
+		padding-left: 8px !important;
+		padding-right: 8px !important;
+	}
+	.modal-body.desktop-modal-body .icons {
+		gap: 0 !important;
+	}
+	.modal-body .icons .desktop-icon .icon-title {
+		font-size: var(--text-xs);
+	}
+}
+
+/* a narrow phone (3 icons a row, ~120px each): the names a size smaller, so the longest (OtoBitz Integration)
+   still fits whole on one line */
+@media screen and (max-width: 420px) {
+	.desktop-icon .icon-title {
+		font-size: var(--text-xs) !important;
+		letter-spacing: 0;
+	}
 }
 
 /* List view column header row — soft blue tint across all doctypes.
