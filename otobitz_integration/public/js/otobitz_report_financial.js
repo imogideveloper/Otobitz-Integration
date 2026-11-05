@@ -21,6 +21,10 @@
 		"Profitability Analysis",
 	];
 	const is_financial = (report) => REPORTS.includes(report.report_name);
+	// reports with the financial statements' filter form only (the auto_trust site has it on every query report);
+	// their table stays Frappe's own
+	const FILTER_ONLY = ["Custom Financial Statement"];
+	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
 	// the filters' order; the others after them, as the report has them
 	const ORDER = [
@@ -65,7 +69,7 @@
 		}
 		const result = setup_filters.apply(this, arguments);
 		const $form = this.page.page_form;
-		const financial = is_financial(this);
+		const financial = has_filter_form(this);
 		document.body.classList.toggle("oto-fin-page", financial);
 		$form.toggleClass("oto-fin-filters", financial);
 		if (!financial) {
