@@ -64,6 +64,18 @@
 	color: #36414c !important;
 }
 
+/* The row under the mouse, every list and every form table: the same tint as the header (and the active
+   sidebar item), replacing Frappe's grey list highlight and imogi_finance's lighter --bg-blue grid hover. Each
+   cell is painted too: list columns and editable grid cells carry their own background. Not the header, not a
+   grid row opened as a form, not a grid cell in error. */
+.list-row-container:not(:has(.list-row-head)):hover,
+.list-row-container:not(:has(.list-row-head)):hover .list-row,
+.list-row-container:not(:has(.list-row-head)):hover .list-row :is(.level-left, .level-right, .list-row-col),
+.form-grid .grid-body .grid-row:not(.grid-row-open):hover > .data-row,
+.form-grid .grid-body .grid-row:not(.grid-row-open):hover > .data-row > :not(.error) {
+	background-color: var(--at-sidebar-active-bg, #e3eeff) !important;
+}
+
 /* List view: hide the right-side "modified / comment count / like" activity
    cluster globally, header ("N of N" count + liked-by-me heart) and each row
    (modified time, comment count, like icon) alike - not data the user wants

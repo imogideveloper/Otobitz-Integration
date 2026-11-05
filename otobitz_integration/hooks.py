@@ -26,7 +26,7 @@ required_apps = ["frappe/erpnext"]
 
 # include js, css files in header of desk.html
 app_include_css = [
-	"/assets/otobitz_integration/css/desk.css?v=13",
+	"/assets/otobitz_integration/css/desk.css?v=14",
 	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=7",
 ]
 # The query string is a manual cache-buster: app_include_js isn't routed
