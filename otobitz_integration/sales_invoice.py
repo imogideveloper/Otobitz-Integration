@@ -51,3 +51,16 @@ def set_default_accounting_date(doc, method=None):
 	"""
 	if not doc.get("custom_accounting_date"):
 		doc.custom_accounting_date = doc.posting_date
+
+
+def set_default_payment_terms(doc, method=None):
+	"""Due Date (the Payment Terms Template link) defaults to Immediate Payment,
+	as in Odoo. Hooked on before_validate because ERPNext builds the payment
+	schedule inside its own validate, which runs before doc_events validate.
+	Fill-only-if-empty: a chosen template or an existing schedule always wins.
+	The Property Setter default covers the desk form; this covers invoices
+	created through code (OtoBitz sync).
+	"""
+	if doc.docstatus == 0 and not doc.get("payment_terms_template") and not doc.get("payment_schedule"):
+		if frappe.db.exists("Payment Terms Template", "Immediate Payment"):
+			doc.payment_terms_template = "Immediate Payment"
