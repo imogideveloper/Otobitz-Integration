@@ -165,7 +165,11 @@ doc_events = {
 	"Sales Invoice": {
 		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series",
 		"before_validate": "otobitz_integration.sales_invoice.set_default_payment_terms",
-		"on_submit": "otobitz_integration.sales_invoice.populate_journal_items",
+		"on_submit": [
+				"otobitz_integration.sales_invoice.create_cogs_entry",
+				"otobitz_integration.sales_invoice.populate_journal_items"
+			],
+			"on_cancel": "otobitz_integration.sales_invoice.cancel_cogs_entry",
 		"validate": [
 			"otobitz_integration.sales_invoice.set_default_payment_reference",
 			"otobitz_integration.sales_invoice.set_default_accounting_date"
