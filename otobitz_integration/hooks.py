@@ -181,6 +181,9 @@ doc_events = {
 		"before_update_after_submit": "otobitz_integration.purchase_order.track",
 		"on_submit": "otobitz_integration.purchase_order.track_on_submit"
 	},
+	"Journal Entry": {
+		"autoname": "otobitz_integration.journal_entry.set_branch_naming_series"
+	},
 	"Payment Entry": {
 		"autoname": "otobitz_integration.payment_entry.set_branch_naming_series",
 		"validate": "otobitz_integration.payment_entry.set_branch_cash_account",

@@ -1,7 +1,7 @@
 import frappe
 from frappe.model.naming import getseries
 
-HO_BRANCHES = ("HEAD OFFICE", "AIO HO OTOXPERT AUTO2000")
+HO_BRANCHES = ("HEAD OFFICE", "AIO HO OTOXPERT AUTO2000", "HO OTOXPERT AUTO2000")
 
 # Odoo bank journals -> payment prefix (journal code + "/"), keyed by the GL
 # account number of the bank account. Odoo's BCA journal code itself ends in
