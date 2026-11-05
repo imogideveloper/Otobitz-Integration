@@ -44,7 +44,7 @@ app_include_js = [
 	"/assets/otobitz_integration/js/otobitz_list_hscroll.js?v=1",
 	"/assets/otobitz_integration/js/otobitz_switch_check.js?v=8",
 	"/assets/otobitz_integration/js/otobitz_global_search.js?v=13",
-	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=3",
+	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=4",
 	"/assets/otobitz_integration/js/otobitz_grid_fit.js?v=2",
 ]
 

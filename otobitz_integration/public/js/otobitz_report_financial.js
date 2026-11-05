@@ -181,7 +181,7 @@
 	const show_footer_message = QueryReport.prototype.show_footer_message;
 	QueryReport.prototype.show_footer_message = function () {
 		const result = show_footer_message.apply(this, arguments);
-		if (!is_financial(this)) return result;
+		if (!has_filter_form(this)) return result;
 		const $box = this.page.page_form.children(".oto-filter-fields");
 		$box.children(".oto-fin-tree").remove();
 		if (this.$tree_footer?.length && $box.length) {
@@ -198,8 +198,18 @@
 	const render_datatable = QueryReport.prototype.render_datatable;
 	QueryReport.prototype.render_datatable = function () {
 		if (!is_financial(this)) {
-			this.$report?.get(0)?.classList.remove("oto-fin-report");
-			return render_datatable.apply(this, arguments);
+			if (!has_filter_form(this)) {
+				this.$report?.get(0)?.classList.remove("oto-fin-report");
+				return render_datatable.apply(this, arguments);
+			}
+			// (Custom Financial Statement: its columns as wide as their content, the rows as tall as the screen)
+			fit_to_content(this);
+			fit_height(this);
+			const out = render_datatable.apply(this, arguments);
+			keep_widths(this);
+			requestAnimationFrame(() => widen_cut(this));
+			watch_height(this);
+			return out;
 		}
 		prepare_statement(this);
 		const result = render_datatable.apply(this, arguments);
@@ -223,7 +233,7 @@
 
 	// measured again once the page has laid out, and whenever what is above it changes height
 	function refit(report) {
-		if (!report.datatable || !is_financial(report)) return;
+		if (!report.datatable || !has_filter_form(report)) return;
 		let changed = fit_height(report);
 		const box = report.$report?.get(0);
 		const scroller = box?.closest(".main-section");
@@ -303,6 +313,87 @@
 		account.width = Math.max(account_need, room - each * amounts);
 	}
 
+	// a report with the filter form only (not a statement): each column as wide as its longest content, header
+	// included (measured on a canvas, the table's own 14px type, the first SAMPLE rows); narrower than the page,
+	// the room left shared out in proportion; wider, the table scrolls sideways (ported from the auto_trust site)
+	const SAMPLE = 800;
+	const CONTENT_MAX = 1100; // a longer text stays cut, its whole on hover
+	const HEADER_EXTRA = 16; // the header's padding (its menu button shows on hover, over the text)
+	const ROW_NUMBER = 44; // the row numbers' column the datatable adds
+	function fit_to_content(report) {
+		const columns = (report.columns || []).filter((c) => !c.hidden);
+		if (!columns.length) return;
+		canvas ||= document.createElement("canvas").getContext("2d");
+		const family = getComputedStyle(document.body).fontFamily;
+		const rows = (report.data || []).slice(0, SAMPLE);
+		const plain = (html) => {
+			if (html === null || html === undefined) return "";
+			const text = String(html);
+			return text.includes("<") ? $("<div>").html(text).text() : text;
+		};
+		for (const column of columns) {
+			canvas.font = `600 14px ${family}`;
+			let widest = canvas.measureText(__(column.label || "")).width + HEADER_EXTRA;
+			canvas.font = `420 14px ${family}`;
+			for (const row of rows) {
+				const value = row[column.fieldname];
+				if (value === null || value === undefined || value === "") continue;
+				let text;
+				try {
+					text = plain(frappe.format(value, column, { only_value: true }, row));
+				} catch (e) {
+					text = String(value);
+				}
+				const digits = (text.match(/[0-9]/g) || []).length;
+				widest = Math.max(
+					widest,
+					canvas.measureText(text.trim()).width + digits * 0.6 + cint(row.indent) * INDENT + (row.indent !== undefined && column === columns[0] ? TOGGLE : 0)
+				);
+			}
+			column.width = Math.min(CONTENT_MAX, Math.ceil(widest) + CELL_PADDING);
+		}
+		const box = report.$report?.get(0)?.clientWidth || report.page.main.width();
+		const room = box - RIGHT_ROOM - ROW_NUMBER;
+		const used = columns.reduce((sum, c) => sum + c.width, 0);
+		if (used < room) {
+			const extra = room - used;
+			let given = 0;
+			columns.forEach((c, i) => {
+				const share = i === columns.length - 1 ? extra - given : Math.floor((extra * c.width) / used);
+				c.width += share;
+				given += share;
+			});
+		}
+	}
+
+	// a cell cut all the same (past CONTENT_MAX): its whole text on hover
+	$(document).on("mouseover", "body.oto-fin-page #page-query-report .dt-cell__content", function () {
+		if (this.scrollWidth > this.clientWidth + 1 && !this.title) this.title = this.innerText.trim();
+	});
+
+	// after drawing: any cell still cut (measured as drawn) widens its column, drawn again once
+	function widen_cut(report) {
+		const datatable = report.datatable;
+		if (!datatable || report._oto_widened === report.data) return;
+		report._oto_widened = report.data;
+		const columns = (report.columns || []).filter((c) => !c.hidden);
+		const offset = datatable.options.serialNoColumn === false ? 0 : 1;
+		let changed = false;
+		columns.forEach((column, i) => {
+			const cells = datatable.wrapper.querySelectorAll(`.dt-cell__content--col-${i + offset}, .dt-cell__content--header-${i + offset}`);
+			let short = 0;
+			for (const cell of cells) short = Math.max(short, cell.scrollWidth - cell.clientWidth);
+			if (short > 1 && column.width < CONTENT_MAX) {
+				column.width = Math.min(CONTENT_MAX, column.width + short + 4);
+				changed = true;
+			}
+		});
+		if (changed) {
+			datatable.refresh(rows_shown(report), columns);
+			keep_widths(report);
+		}
+	}
+
 	// the rows' box as tall as the screen left under it (its header, the filters, the cards above stay)
 	const BOTTOM_ROOM = 20;
 	const HEADER = 36;
@@ -322,9 +413,10 @@
 		"resize",
 		frappe.utils.debounce(() => {
 			const report = frappe.query_report;
-			if (report && frappe.get_route()?.[0] === "query-report" && is_financial(report)) {
+			if (report && frappe.get_route()?.[0] === "query-report" && has_filter_form(report)) {
 				fit_height(report);
-				fit_columns(report);
+				if (is_financial(report)) fit_columns(report);
+				else fit_to_content(report);
 				report.datatable?.refresh(report.data, report.columns.filter((c) => !c.hidden));
 				keep_widths(report);
 			}
@@ -427,7 +519,7 @@
 
 	function apply_chart(report) {
 		report._oto_chart_button?.remove();
-		if (!is_financial(report) || !report.chart_options) return;
+		if (!has_filter_form(report) || !report.chart_options) return;
 		const shown = report._oto_chart_shown ?? chart_shown(report.report_name);
 		report.$chart.toggle(shown);
 		report._oto_chart_button = report.page.add_inner_button(shown ? __("Hide Chart") : __("Show Chart"), () => {
