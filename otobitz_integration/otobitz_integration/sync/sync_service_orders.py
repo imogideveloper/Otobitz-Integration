@@ -38,7 +38,9 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	IMOGIBOT_USER,
 	clean,
+	clean_email,
 	clean_or_none,
+	clean_phone,
 	get_or_create_customer_address,
 	get_or_create_vehicle,
 	log_failed_sync,
@@ -386,6 +388,24 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	return so.name
 
 
+def _invoice_contact_values(header: dict) -> dict:
+	"""NIK / Email / Phone / Address on the Sales Invoice, taken
+	from this Work Order's own OtoBitz payload (nik, email, nohp|notlp,
+	alamat). Only fields that actually carry a value are
+	returned, so a blank never overwrites anything. These can't rely on the
+	fields' fetch_from (customer.*): that only fires on an interactive
+	change in the browser, and the Customer built by _resolve_customer()
+	never gets email/phone/address anyway.
+	"""
+	values = {
+		"custom_nik": clean_or_none(header.get("nik")),
+		"custom_email": clean_email(header.get("email")),
+		"custom_phone": clean_phone(clean_or_none(header.get("nohp")) or clean_or_none(header.get("notlp"))),
+		"custom_address": clean_or_none(header.get("alamat")),
+	}
+	return {k: v for k, v in values.items() if v}
+
+
 def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si = make_sales_invoice(so_name, ignore_permissions=True)
 	si.update_stock = 0
@@ -401,6 +421,8 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	# not changed interactively. Same class of bug as the Sales Order
 	# vehicle fields fixed earlier - set explicitly from the source data.
 	si.custom_plat_nomor = clean(header.get("nopolisi"))
+	for fieldname, value in _invoice_contact_values(header).items():
+		si.set(fieldname, value)
 	si.posting_date = getdate(header.get("tglfaktur") or header.get("tanggal"))
 	# Without this, erpnext's own TransactionBase.validate_posting_time()
 	# (called from Sales Invoice.validate()) silently stomps the explicit
