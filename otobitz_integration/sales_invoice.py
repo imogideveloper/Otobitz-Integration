@@ -175,6 +175,7 @@ def create_cogs_entry(doc, method=None):
 			"voucher_type": "Journal Entry",
 			"company": doc.company,
 			"posting_date": doc.posting_date,
+			"title": _cogs_remark(doc.name),
 			"user_remark": _cogs_remark(doc.name),
 			"custom_otobitz_branch": doc.get("custom_otobitz_branch"),
 			"accounts": accounts,

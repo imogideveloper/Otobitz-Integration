@@ -79,3 +79,47 @@
 [data-page-route^="List/"][data-page-route$="/List"] .frappe-list .result-container::-webkit-scrollbar-thumb:hover {
 	background: #8d99a6;
 }
+
+/* Sales Invoice / Purchase Invoice "Journal Items" tab: nothing is cut off. Long account and branch names wrap onto a second line instead of ending in "...", and the row grows with its text. */
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row > .data-row {
+	height: auto !important;
+	min-height: 40px;
+}
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row > .data-row > .col {
+	height: auto !important;
+	align-self: stretch;
+}
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row .static-area {
+	white-space: normal !important;
+	overflow: visible !important;
+	text-overflow: clip !important;
+	word-break: break-word;
+	height: auto !important;
+	line-height: 1.35;
+}
+[data-fieldname="custom_journal_items"] .grid-body .rows .grid-row .grid-static-col {
+	height: auto !important;
+}
+
+/* Journal Entry list: full ID, company and status are readable (the wide table scrolls sideways inside the list, see the global block above). */
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row .list-subject.level,
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row-head .list-subject.level {
+	flex: 0 0 240px !important;
+	min-width: 0 !important;
+	width: auto !important;
+}
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row .list-row-col[data-fieldname="title"],
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row-head .list-row-col[data-fieldname="title"] {
+	flex: 1 0 300px !important;
+	min-width: 0 !important;
+}
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row .list-row-col[data-fieldname="company"],
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row-head .list-row-col[data-fieldname="company"] {
+	flex: 0 0 230px !important;
+	min-width: 0 !important;
+}
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row .list-row-col[data-fieldname="custom_otobitz_endpoint"],
+[data-page-route="List/Journal Entry/List"] .frappe-list .list-row-head .list-row-col[data-fieldname="custom_otobitz_endpoint"] {
+	flex: 0 0 190px !important;
+	min-width: 0 !important;
+}
