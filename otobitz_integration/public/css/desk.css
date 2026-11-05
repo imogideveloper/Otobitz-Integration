@@ -52,12 +52,10 @@
 	}
 }
 
-/* List view column header row — soft blue tint across all doctypes.
-   Matches the #dbe4ef per-doctype override set in the Purchase
-   Order/Sales Order/Sales Invoice/Payment Entry list scripts, so this
-   global fallback doesn't visually disagree with them. */
+/* List view column header row, all doctypes: the tint of the active sidebar item (imogi_finance's
+   --at-sidebar-active-bg), as every form table header and the per-doctype list scripts use too. */
 .list-row-head {
-	background-color: #dbe4ef !important;
+	background-color: var(--at-sidebar-active-bg, #e3eeff) !important;
 	color: #36414c !important;
 }
 .list-row-head a,
