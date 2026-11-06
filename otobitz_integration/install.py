@@ -70,6 +70,8 @@ def reapply_fixtures():
 # Desktop (/desk) modules an auto workshop (bengkel) has no use for (user, 2026-11-05): hidden on every migrate,
 # since migrate syncs the standard icons back from the apps' files. Still reachable by search / URL.
 HIDDEN_DESKTOP_ICONS = ("Framework", "Frappe Framework", "Manufacturing", "Subcontracting", "Projects")
+APP_ICON = "OtoBitz Integration"
+APP_LOGO = "/assets/otobitz_integration/images/otobitz-logo.svg"
 
 
 def hide_desktop_icons():
@@ -80,6 +82,11 @@ def hide_desktop_icons():
 		if frappe.db.exists("Desktop Icon", name) and not frappe.db.get_value("Desktop Icon", name, "hidden"):
 			frappe.db.set_value("Desktop Icon", name, "hidden", 1, update_modified=False)
 			changed = True
+	# the app's own icon: green like Imogi Payroll's, not the grey letter the desk draws for an icon with no image
+	# (the icon is the site's own record, made with the workspace, so it is set here and not shipped)
+	if frappe.db.exists("Desktop Icon", APP_ICON) and frappe.db.get_value("Desktop Icon", APP_ICON, "logo_url") != APP_LOGO:
+		frappe.db.set_value("Desktop Icon", APP_ICON, "logo_url", APP_LOGO, update_modified=False)
+		changed = True
 	if changed:
 		frappe.db.commit()
 	# (the desk caches each user's icons)
