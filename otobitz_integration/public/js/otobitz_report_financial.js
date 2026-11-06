@@ -30,6 +30,7 @@
 		"Supplier Ledger Summary",
 		"Accounts Receivable",
 		"Accounts Payable",
+		"Accounts Receivable Summary",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
@@ -67,7 +68,17 @@
 		],
 		// (the same as Accounts Receivable's; it has no Sales Person / Territory; party_account: Payable Account)
 		"Accounts Payable": ["cost_center", "finance_book", "project", "party_account", "payment_terms_template"],
+		// (its summary the same, as the auto_trust site)
+		"Accounts Receivable Summary": ["cost_center", "finance_book", "project", "sales_person", "payment_terms_template", "territory"],
 	};
+
+	// a report's own order of its filters, before the general ORDER (the AR summary as Accounts Receivable)
+	const REPORT_ORDER = {
+		"Accounts Receivable Summary": ["company", "report_date", "party_type", "party", "ageing_based_on", "age_as_on", "range"],
+	};
+
+	// reports whose few switches go under the filters all the same, as their detailed report's (AR)
+	const CHECKS_BELOW = ["Accounts Receivable Summary"];
 
 	function hide_filters(report) {
 		for (const fieldname of HIDDEN_FILTERS[report.report_name] || []) {
@@ -164,7 +175,7 @@
 		const long = $checks.get().some((el) => (el.querySelector(".label-area")?.scrollWidth || 0) > LONG_SWITCH_LABEL);
 		const few = $checks.length <= 4;
 		const columns = CHECK_COLUMNS[this.report_name];
-		const below = $checks.length > 4 || long || !!columns;
+		const below = $checks.length > 4 || long || !!columns || CHECKS_BELOW.includes(this.report_name);
 		$form.toggleClass("oto-fin-checks-below", below);
 		if (below)
 			rows_of_switches($form.children(".oto-filter-checks").get(0), columns ? Math.ceil($checks.length / columns) : few ? 1 : 2, !!columns);
@@ -231,9 +242,10 @@
 
 	function arrange_filters(report, $form) {
 		const $box = $form.children(".oto-filter-fields").length ? $form.children(".oto-filter-fields") : $form;
+		const order = REPORT_ORDER[report.report_name] || ORDER;
 		const rank = (el) => {
-			const i = ORDER.indexOf(el.dataset.fieldname);
-			return i < 0 ? ORDER.length : i;
+			const i = order.indexOf(el.dataset.fieldname);
+			return i < 0 ? order.length : i;
 		};
 		$box
 			.children(".frappe-control")
