@@ -103,6 +103,20 @@ body.oto-fin-page #page-query-report .page-form.oto-filter-split > :is(.oto-filt
 		margin: 0;
 	}
 
+	/* the rows of switches close together (user, 2026-11-06): each switch as tall as its toggle, not the 34px
+	   the fixed 33.5px of the column on the right, the rows 10px apart */
+	body.oto-fin-page #page-query-report .page-form.oto-fin-checks-below > .oto-filter-checks {
+		row-gap: 10px !important;
+	}
+	body.oto-fin-page #page-query-report .page-form.oto-fin-checks-below > .oto-filter-checks > .frappe-control[data-fieldtype="Check"] {
+		height: auto;
+	}
+	body.oto-fin-page #page-query-report .page-form.oto-fin-checks-below > .oto-filter-checks .switch-control {
+		padding-top: 0 !important;
+		min-height: 0 !important;
+		margin: 0 !important;
+	}
+
 	body.oto-fin-page #page-query-report .page-form.oto-fin-checks-below > .oto-filter-checks .label-area {
 		white-space: nowrap;
 		font-size: var(--text-sm, 12px) !important;
