@@ -34,6 +34,7 @@
 		"Accounts Payable Summary",
 		"Sales Register",
 		"Purchase Register",
+		"Item-wise Sales Register",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
