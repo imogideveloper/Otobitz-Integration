@@ -37,6 +37,7 @@
 		"Item-wise Sales Register",
 		"Item-wise Purchase Register",
 		"Gross Profit",
+		"Sales Invoice Trends",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
