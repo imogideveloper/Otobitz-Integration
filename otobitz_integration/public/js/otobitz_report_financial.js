@@ -23,7 +23,13 @@
 	const is_financial = (report) => REPORTS.includes(report.report_name);
 	// reports with the financial statements' filter form only (the auto_trust site has it on every query report);
 	// their table stays Frappe's own
-	const FILTER_ONLY = ["Custom Financial Statement", "General Ledger", "Customer Ledger Summary", "Supplier Ledger Summary"];
+	const FILTER_ONLY = [
+		"Custom Financial Statement",
+		"General Ledger",
+		"Customer Ledger Summary",
+		"Supplier Ledger Summary",
+		"Accounts Receivable",
+	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
 	// the filters' order; the others after them, as the report has them
@@ -46,6 +52,28 @@
 		"report_template",
 	];
 	const LONG_SWITCH_LABEL = 180; // the right-hand column (240px) less its switch
+
+	// filters a report doesn't need here, hidden, as the auto_trust site (user, 2026-11-06): {report: [fieldname]}
+	const HIDDEN_FILTERS = {
+		"Accounts Receivable": [
+			"cost_center",
+			"finance_book",
+			"project",
+			"sales_person",
+			"party_account",
+			"payment_terms_template",
+			"territory",
+		],
+	};
+
+	function hide_filters(report) {
+		for (const fieldname of HIDDEN_FILTERS[report.report_name] || []) {
+			const filter = report.get_filter?.(fieldname);
+			if (!filter) continue;
+			filter.df.hidden = 1;
+			filter.refresh();
+		}
+	}
 
 	// reports whose switches under the filters go in so many columns (fewer only where their labels would not fit
 	// whole): the General Ledger's eleven in four, as the auto_trust site (user, 2026-11-06)
@@ -125,6 +153,7 @@
 			this.$collapse_button = $();
 			$holder.css({ display: "", "align-items": "", gap: "" });
 		}
+		hide_filters(this);
 		split_filters(this, $form);
 		arrange_filters(this, $form);
 		// many switches (the Trial Balance's seven): a row of their own under the filters
