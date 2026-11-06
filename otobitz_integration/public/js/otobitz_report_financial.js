@@ -84,6 +84,35 @@
 		"Accounts Receivable Summary": ["company", "report_date", "party_type", "party", "ageing_based_on", "age_as_on", "range"],
 	};
 
+	// a switch put among the filters, under one of them: {report: {switch: the filter it goes under}} (user,
+	// 2026-11-06: Gross Profit's Include Returned Invoices under Sales Person)
+	const CHECK_UNDER = { "Gross Profit": { include_returned_invoices: "sales_person" } };
+
+	function checks_under(report, $form) {
+		const $box = $form.children(".oto-filter-fields");
+		for (const [check, under] of Object.entries(CHECK_UNDER[report.report_name] || {})) {
+			const control = $form.find(`.oto-filter-checks > .frappe-control[data-fieldname="${check}"]`).get(0);
+			if (!control || !$box.length) continue;
+			// (in a box of the switches' own class: their look, the switch first, comes with it)
+			const $cell = $('<div class="oto-filter-checks oto-check-cell"></div>').append(control);
+			$box.append($cell);
+			const place = () => {
+				const box = $box.get(0);
+				const columns = getComputedStyle(box).gridTemplateColumns.split(" ").filter(Boolean).length || 1;
+				const items = [...box.children].filter((el) => el !== $cell.get(0) && el.offsetParent && !el.classList.contains("oto-fin-tree"));
+				const i = items.findIndex((el) => el.dataset.fieldname === under);
+				// (the cell right under that filter, row and column; the filters after it, and the Level cell, flow
+				// round it)
+				$cell.css({
+					"grid-column": i < 0 ? "" : String((i % columns) + 1),
+					"grid-row": i < 0 ? "" : String(Math.floor(i / columns) + 2),
+				});
+			};
+			requestAnimationFrame(place);
+			new ResizeObserver(frappe.utils.debounce(place, 50)).observe($box.get(0));
+		}
+	}
+
 	// reports whose few switches go under the filters all the same, as their detailed reports' (AR / AP)
 	const CHECKS_BELOW = ["Accounts Receivable Summary", "Accounts Payable Summary"];
 
@@ -177,6 +206,7 @@
 		hide_filters(this);
 		split_filters(this, $form);
 		arrange_filters(this, $form);
+		checks_under(this, $form);
 		// many switches (the Trial Balance's seven): a row of their own under the filters
 		const $checks = $form.find(".oto-filter-checks > .frappe-control").not(".hide-control, .hidden");
 		const long = $checks.get().some((el) => (el.querySelector(".label-area")?.scrollWidth || 0) > LONG_SWITCH_LABEL);

@@ -429,3 +429,14 @@ body.oto-fin-page[data-route^="query-report/"] .page-head .custom-actions > .inn
 body.oto-fin-page[data-route^="query-report/"] .page-head .custom-actions > button:is([data-label="Show%20Chart"], [data-label="Hide%20Chart"]) {
 	order: 1;
 }
+
+/* a switch put among the filters, under one of them (CHECK_UNDER in the script): in the cell the script gives it;
+   level with the inputs. Its own box under the filters, left empty, not shown */
+body.oto-fin-page #page-query-report .page-form.oto-fin-filters > .oto-filter-checks:not(:has(> .frappe-control:not(.hide-control, .hidden))) {
+	display: none !important;
+}
+body.oto-fin-page #page-query-report .page-form.oto-fin-filters > .oto-filter-fields > .oto-check-cell {
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}

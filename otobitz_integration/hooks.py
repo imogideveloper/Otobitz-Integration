@@ -27,7 +27,7 @@ required_apps = ["frappe/erpnext"]
 # include js, css files in header of desk.html
 app_include_css = [
 	"/assets/otobitz_integration/css/desk.css?v=15",
-	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=11",
+	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=13",
 ]
 # The query string is a manual cache-buster: app_include_js isn't routed
 # through esbuild's content-hashed .bundle.js/assets.json manifest (that only
@@ -44,7 +44,7 @@ app_include_js = [
 	"/assets/otobitz_integration/js/otobitz_list_hscroll.js?v=1",
 	"/assets/otobitz_integration/js/otobitz_switch_check.js?v=8",
 	"/assets/otobitz_integration/js/otobitz_global_search.js?v=13",
-	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=22",
+	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=24",
 	"/assets/otobitz_integration/js/otobitz_grid_fit.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_link_all_options.js?v=1",
 	"/assets/otobitz_integration/js/vendor/html-to-image.js?v=1",
