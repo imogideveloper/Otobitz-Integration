@@ -39,6 +39,7 @@
 		"Gross Profit",
 		"Sales Invoice Trends",
 		"Purchase Invoice Trends",
+		"Trial Balance for Party",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
@@ -116,7 +117,7 @@
 	}
 
 	// reports whose few switches go under the filters all the same, as their detailed reports' (AR / AP)
-	const CHECKS_BELOW = ["Accounts Receivable Summary", "Accounts Payable Summary"];
+	const CHECKS_BELOW = ["Accounts Receivable Summary", "Accounts Payable Summary", "Trial Balance for Party"];
 
 	function hide_filters(report) {
 		for (const fieldname of HIDDEN_FILTERS[report.report_name] || []) {
