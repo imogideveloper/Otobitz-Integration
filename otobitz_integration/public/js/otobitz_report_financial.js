@@ -47,6 +47,40 @@
 	];
 	const LONG_SWITCH_LABEL = 180; // the right-hand column (240px) less its switch
 
+	// reports whose switches under the filters go in so many columns (fewer only where their labels would not fit
+	// whole): the General Ledger's eleven in four, as the auto_trust site (user, 2026-11-06)
+	const CHECK_COLUMNS = { "General Ledger": 4 };
+
+	// a report's filter labels shortened here (the report's own wording too long to sit in its columns), and the
+	// words a Select's options repeat from their filter's label dropped ("Categorize by" · "Voucher (Consolidated)")
+	const REPORT_LABELS = {
+		"General Ledger": {
+			ignore_err: "Ignore Exchange Gain / Loss Journals",
+			ignore_cr_dr_notes: "Ignore System Credit / Debit Notes",
+			show_amount_in_company_currency: "Credit / Debit in Company Currency",
+		},
+	};
+	const OPTION_PREFIXES = { "General Ledger": { categorize_by: "Categorize by " } };
+
+	function relabel_filters(report) {
+		const filters = report.report_settings?.filters;
+		if (!Array.isArray(filters) || report.report_settings._oto_relabelled) return;
+		report.report_settings._oto_relabelled = true;
+		const labels = REPORT_LABELS[report.report_name] || {};
+		const prefixes = OPTION_PREFIXES[report.report_name] || {};
+		for (const df of filters) {
+			if (labels[df.fieldname]) df.label = __(labels[df.fieldname]);
+			const prefix = prefixes[df.fieldname];
+			if (prefix && Array.isArray(df.options)) {
+				df.options = df.options.map((option) =>
+					option && typeof option === "object" && String(option.label || "").startsWith(__(prefix.trim()))
+						? { ...option, label: String(option.label).slice(__(prefix.trim()).length).trim() }
+						: option
+				);
+			}
+		}
+	}
+
 	// ---- the filters: fields on the left, the switches in a column on the right --------------------------------
 	function split_filters(report, $form) {
 		const $checks = $form.children('.frappe-control[data-fieldtype="Check"], .check-filter-area');
@@ -67,6 +101,7 @@
 			this.check_filter_area = undefined;
 			this._oto_check_area_placeholder = false;
 		}
+		if (has_filter_form(this)) relabel_filters(this);
 		const result = setup_filters.apply(this, arguments);
 		const $form = this.page.page_form;
 		const financial = has_filter_form(this);
@@ -80,15 +115,27 @@
 			this.check_filter_area = $();
 			this._oto_check_area_placeholder = true;
 		}
+		// a report whose filters Frappe opens collapsed (collapsible_filters: the General Ledger's, all but its first
+		// row hidden): opened at once, every filter and switch shown, and no chevron to fold them, as the auto_trust
+		// site; the filter it sat in (Voucher No) laid out as the others again
+		if (this.report_settings?.collapsible_filters && this.$collapse_button) {
+			if (this.filters_hidden === false) this.toggle_filter_visiblity();
+			const $holder = this.$collapse_button.parent();
+			this.$collapse_button.remove();
+			this.$collapse_button = $();
+			$holder.css({ display: "", "align-items": "", gap: "" });
+		}
 		split_filters(this, $form);
 		arrange_filters(this, $form);
 		// many switches (the Trial Balance's seven): a row of their own under the filters
 		const $checks = $form.find(".oto-filter-checks > .frappe-control").not(".hide-control, .hidden");
 		const long = $checks.get().some((el) => (el.querySelector(".label-area")?.scrollWidth || 0) > LONG_SWITCH_LABEL);
 		const few = $checks.length <= 4;
-		const below = $checks.length > 4 || long;
+		const columns = CHECK_COLUMNS[this.report_name];
+		const below = $checks.length > 4 || long || !!columns;
 		$form.toggleClass("oto-fin-checks-below", below);
-		if (below) rows_of_switches($form.children(".oto-filter-checks").get(0), few ? 1 : 2);
+		if (below)
+			rows_of_switches($form.children(".oto-filter-checks").get(0), columns ? Math.ceil($checks.length / columns) : few ? 1 : 2, !!columns);
 		// (the switches' column leaving the filters a single column: under them)
 		else
 			requestAnimationFrame(() => {
@@ -104,20 +151,28 @@
 	// the switches under the filters in rows, filled column by column, each column at least as wide as its longest
 	// label and the columns spread over the width (labels never cut)
 	const SWITCH_GAP = 20;
-	function rows_of_switches(box, fewest = 2) {
+	// by_width: the switches ordered longest label first, so the long ones share a column and more columns fit (a
+	// report with its own column count, CHECK_COLUMNS)
+	function rows_of_switches(box, fewest = 2, by_width = false) {
 		if (!box) return;
 		const arrange = () => {
-			const items = [...box.children].filter((el) => el.offsetParent && el.matches(".frappe-control"));
+			let items = [...box.children].filter((el) => el.offsetParent && el.matches(".frappe-control"));
 			if (!items.length) return;
 			box.style.gridTemplateRows = "";
 			box.style.gridAutoFlow = "";
-			const widths = items.map((el) => {
+			let widths = items.map((el) => {
 				const before = el.style.width;
 				el.style.width = "max-content";
 				const width = Math.ceil(el.getBoundingClientRect().width) + 4;
 				el.style.width = before;
 				return width;
 			});
+			if (by_width) {
+				const order = items.map((el, i) => [el, widths[i]]).sort((a, b) => b[1] - a[1]);
+				order.forEach(([el]) => box.appendChild(el));
+				items = order.map(([el]) => el);
+				widths = order.map(([, width]) => width);
+			}
 			const form = box.parentElement;
 			const pad = parseFloat(getComputedStyle(form).paddingLeft) + parseFloat(getComputedStyle(form).paddingRight);
 			const inner = parseFloat(getComputedStyle(box).paddingLeft) + parseFloat(getComputedStyle(box).paddingRight);
