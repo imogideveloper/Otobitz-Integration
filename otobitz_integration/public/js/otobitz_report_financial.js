@@ -441,6 +441,18 @@
 		}
 		const box = report.$report?.get(0)?.clientWidth || report.page.main.width();
 		const room = box - RIGHT_ROOM - ROW_NUMBER;
+		// a report's text columns at most this share of the page (never below their header): a long account name
+		// (Receivable Account) kept from taking the width of several columns; cut, it shows whole on hover
+		const cap = TEXT_CAP[report.report_name];
+		if (cap) {
+			for (const c of columns) {
+				const most = Math.max(header_width[c.fieldname], Math.floor(room * cap));
+				if (!NUMERIC.includes(c.fieldtype) && c.width > most) {
+					c.width = most;
+					c._oto_compact = true;
+				}
+			}
+		}
 		const used = columns.reduce((sum, c) => sum + c.width, 0);
 		if (used < room) {
 			const extra = room - used;
@@ -501,6 +513,8 @@
 	const COMPACT = ["Customer Ledger Summary", "Supplier Ledger Summary"];
 	const NUMERIC = ["Currency", "Float", "Int", "Percent"];
 	const MIN_COMPACT = 40;
+	// {report: the share of the page a text column may take at most} (user, 2026-11-06: prod's Receivable Account)
+	const TEXT_CAP = { "Accounts Receivable": 0.16 };
 
 	// a cell cut all the same (past CONTENT_MAX): its whole text on hover
 	$(document).on("mouseover", "body.oto-fin-page #page-query-report .dt-cell__content", function () {
