@@ -31,6 +31,7 @@
 		"Accounts Receivable",
 		"Accounts Payable",
 		"Accounts Receivable Summary",
+		"Accounts Payable Summary",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
@@ -70,6 +71,7 @@
 		"Accounts Payable": ["cost_center", "finance_book", "project", "party_account", "payment_terms_template"],
 		// (its summary the same, as the auto_trust site)
 		"Accounts Receivable Summary": ["cost_center", "finance_book", "project", "sales_person", "payment_terms_template", "territory"],
+		"Accounts Payable Summary": ["cost_center", "finance_book", "project", "payment_terms_template"],
 	};
 
 	// a report's own order of its filters, before the general ORDER (the AR summary as Accounts Receivable)
@@ -77,8 +79,8 @@
 		"Accounts Receivable Summary": ["company", "report_date", "party_type", "party", "ageing_based_on", "age_as_on", "range"],
 	};
 
-	// reports whose few switches go under the filters all the same, as their detailed report's (AR)
-	const CHECKS_BELOW = ["Accounts Receivable Summary"];
+	// reports whose few switches go under the filters all the same, as their detailed reports' (AR / AP)
+	const CHECKS_BELOW = ["Accounts Receivable Summary", "Accounts Payable Summary"];
 
 	function hide_filters(report) {
 		for (const fieldname of HIDDEN_FILTERS[report.report_name] || []) {
