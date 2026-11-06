@@ -52,6 +52,9 @@ from otobitz_integration.otobitz_integration.sync.common import (
 )
 
 TAXES_AND_CHARGES_TEMPLATE = "Sales Tax - O"
+# Per-line Item Tax Template (PPN 11%, account 2140313000) - only fills the
+# "Tax" column; skipped if it doesn't exist on this site.
+SALES_ITEM_TAX_TEMPLATE = "Inc PPN 11% - AIO"
 OVERLAP_DAYS = 3
 # A 2-day window took ~3 minutes and returned 1109 rows; a full-month window
 # (30 days) timed out every retry. Response time scales with the range, not
@@ -340,6 +343,9 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	if 0 < odometer <= 9_999_999:
 		so.custom_odometer = odometer
 
+	sales_item_tax_template = (
+		SALES_ITEM_TAX_TEMPLATE if frappe.db.exists("Item Tax Template", SALES_ITEM_TAX_TEMPLATE) else None
+	)
 	for row in wo_rows:
 		item_code = clean(row.get("kodereferensi"))
 		if not item_code or not frappe.db.exists("Item", item_code):
@@ -372,6 +378,11 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		}
 		if item_cost_center:
 			item_row["cost_center"] = item_cost_center
+		# Show the tax name per line like Odoo does (the "Tax" column). The
+		# document-level template below still computes the tax; this only
+		# fills the per-line Item Tax Template (PPN 11%, same account).
+		if sales_item_tax_template:
+			item_row["item_tax_template"] = sales_item_tax_template
 		so.append("items", item_row)
 
 	if not so.items:
