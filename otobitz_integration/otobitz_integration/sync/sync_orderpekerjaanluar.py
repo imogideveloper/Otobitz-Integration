@@ -29,6 +29,21 @@ WATERMARK_FIELD = "last_orderpekerjaanluar_sync_date"
 OVERLAP_DAYS = 3
 CHUNK_DAYS = 2
 TAXES_AND_CHARGES_TEMPLATE = "Purchase Tax - O"
+# Pekerjaan luar (OPL) = PPN 11% (Excl) + PPh 23 2% (potongan), sama seperti Odoo
+# (baris PO jasa OPL di Odoo selalu memakai kedua pajak itu). Template induk berisi
+# baris PPN + PPh dengan tarif 0; tarif sebenarnya datang dari Item Tax Template
+# per baris. Bila kedua template belum ada di site ini, jatuh kembali ke template
+# lama (PPN saja) supaya sinkronisasi tidak berhenti.
+OPL_TAXES_AND_CHARGES_TEMPLATE = "Pembelian PPN + PPh (Induk) - AIO"
+OPL_ITEM_TAX_TEMPLATE = "PPN 11% + PPh 23 2% - AIO"
+
+
+def _tax_templates() -> tuple[str, str | None]:
+	if frappe.db.exists("Purchase Taxes and Charges Template", OPL_TAXES_AND_CHARGES_TEMPLATE) and frappe.db.exists(
+		"Item Tax Template", OPL_ITEM_TAX_TEMPLATE
+	):
+		return OPL_TAXES_AND_CHARGES_TEMPLATE, OPL_ITEM_TAX_TEMPLATE
+	return TAXES_AND_CHARGES_TEMPLATE, None
 
 
 def get_sync_window() -> tuple[str, str]:
@@ -117,19 +132,23 @@ def _create_order(nomor: str, row: dict) -> str:
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	sales_order = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": clean(row.get("nomor_so"))})
 
+	taxes_template, item_tax_template = _tax_templates()
 	items = []
 	for detail in row.get("detail") or []:
 		item_code = clean(detail.get("kodeopl"))
 		if not item_code or not frappe.db.exists("Item", item_code):
 			continue
 		rate = flt(detail.get("hargabeli"))
-		items.append({
+		item = {
 			"item_code": item_code,
 			"qty": 1,
 			"price_list_rate": rate,
 			"rate": rate,
 			"schedule_date": getdate(row.get("tanggal")),
-		})
+		}
+		if item_tax_template:
+			item["item_tax_template"] = item_tax_template
+		items.append(item)
 
 	return create_purchase_order(
 		order_number=nomor,
@@ -139,7 +158,7 @@ def _create_order(nomor: str, row: dict) -> str:
 		items=items,
 		branch=branch,
 		sales_order=sales_order,
-		taxes_and_charges_template=TAXES_AND_CHARGES_TEMPLATE,
+		taxes_and_charges_template=taxes_template,
 		source_document=nomor,
 	)
 
