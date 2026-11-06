@@ -45,6 +45,7 @@
 		"Customer Credit Balance",
 		"Sales Payment Summary",
 		"Address And Contacts",
+		"UAE VAT 201",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
