@@ -446,12 +446,32 @@
 					c.width = width;
 				}
 			}
+			// still wider (a laptop screen, 1366 / 1536 wide: the amounts alone fill it): every column, Dr/Cr and
+			// the amounts too, capped at one width shared by all, so the widest give way first and the table never
+			// scrolls sideways (user, 2026-11-06); what is cut shows whole on hover
+			const total = columns.reduce((sum, c) => sum + c.width, 0);
+			if (total > room) {
+				const all_at = (level) => columns.reduce((sum, c) => sum + Math.max(MIN_COMPACT, Math.min(c.width, level)), 0);
+				let low = MIN_COMPACT;
+				let high = Math.max(...columns.map((c) => c.width));
+				while (high - low > 1) {
+					const mid = Math.floor((low + high) / 2);
+					if (all_at(mid) <= room) low = mid;
+					else high = mid;
+				}
+				for (const c of columns) {
+					const width = Math.max(MIN_COMPACT, Math.min(c.width, low));
+					if (width < c.width) c._oto_compact = true;
+					c.width = width;
+				}
+			}
 		}
 	}
 	// reports whose table fits the page's width, its long text columns narrowed rather than scrolled sideways
 	// (user, 2026-11-06: a long customer name widened prod's table past the screen)
 	const COMPACT = ["Customer Ledger Summary", "Supplier Ledger Summary"];
 	const NUMERIC = ["Currency", "Float", "Int", "Percent"];
+	const MIN_COMPACT = 40;
 
 	// a cell cut all the same (past CONTENT_MAX): its whole text on hover
 	$(document).on("mouseover", "body.oto-fin-page #page-query-report .dt-cell__content", function () {
