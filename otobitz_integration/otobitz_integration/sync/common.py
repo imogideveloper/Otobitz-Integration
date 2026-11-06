@@ -127,7 +127,6 @@ _ERROR_CATEGORY_PATTERNS = [
 	("Mode of Payment belum ada akun Cash/Bank", "Please set default Cash or Bank account in Mode of Payment"),
 	("Sales Invoice belum ada saat sync payment", "No Sales Invoice found for nofaktur"),
 	("Belum ada Approval Setting untuk Cost Center", "No active Approval Setting with a purchase"),
-	("Tidak ada DO Towing yang bisa ditagih", "Tidak ada DO Towing yang bisa ditagih"),
 	("Race condition penomoran Series", "Record has changed since last read"),
 	("Item tidak bisa di-resolve dari WO", "No resolvable Items for Work Order"),
 	("Customer tidak ditemukan berdasarkan nama", "No Customer found matching name"),
