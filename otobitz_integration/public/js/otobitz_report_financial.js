@@ -29,6 +29,7 @@
 		"Customer Ledger Summary",
 		"Supplier Ledger Summary",
 		"Accounts Receivable",
+		"Accounts Payable",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
@@ -64,6 +65,8 @@
 			"payment_terms_template",
 			"territory",
 		],
+		// (the same as Accounts Receivable's; it has no Sales Person / Territory; party_account: Payable Account)
+		"Accounts Payable": ["cost_center", "finance_book", "project", "party_account", "payment_terms_template"],
 	};
 
 	function hide_filters(report) {
@@ -514,7 +517,7 @@
 	const NUMERIC = ["Currency", "Float", "Int", "Percent"];
 	const MIN_COMPACT = 40;
 	// {report: the share of the page a text column may take at most} (user, 2026-11-06: prod's Receivable Account)
-	const TEXT_CAP = { "Accounts Receivable": 0.16 };
+	const TEXT_CAP = { "Accounts Receivable": 0.16, "Accounts Payable": 0.16 };
 
 	// a cell cut all the same (past CONTENT_MAX): its whole text on hover
 	$(document).on("mouseover", "body.oto-fin-page #page-query-report .dt-cell__content", function () {
