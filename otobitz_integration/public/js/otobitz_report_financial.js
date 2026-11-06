@@ -386,9 +386,12 @@
 			const text = String(html);
 			return text.includes("<") ? $("<div>").html(text).text() : text;
 		};
+		const header_width = {};
 		for (const column of columns) {
+			column._oto_compact = false;
 			canvas.font = `600 14px ${family}`;
 			let widest = canvas.measureText(__(column.label || "")).width + HEADER_EXTRA;
+			header_width[column.fieldname] = Math.ceil(widest) + CELL_PADDING;
 			canvas.font = `420 14px ${family}`;
 			for (const row of rows) {
 				const value = row[column.fieldname];
@@ -418,8 +421,37 @@
 				c.width += share;
 				given += share;
 			});
+		} else if (COMPACT.includes(report.report_name)) {
+			// wider than the page: the amounts stay whole, and so does every text column that fits; only the
+			// longest (a long customer name) is narrowed, down to one width shared by them all, never below its
+			// header; a name cut short shows whole on hover
+			const is_text = (c) => !NUMERIC.includes(c.fieldtype);
+			const fixed = columns.filter((c) => !is_text(c)).reduce((sum, c) => sum + c.width, 0);
+			const text = columns.filter(is_text);
+			const text_room = room - fixed;
+			const floor = (c) => header_width[c.fieldname];
+			const width_at = (level) => text.reduce((sum, c) => sum + Math.max(floor(c), Math.min(c.width, level)), 0);
+			if (text.length && width_at(0) <= text_room) {
+				// (the widest cap that fits, found by halving)
+				let low = 0;
+				let high = Math.max(...text.map((c) => c.width));
+				while (high - low > 1) {
+					const mid = Math.floor((low + high) / 2);
+					if (width_at(mid) <= text_room) low = mid;
+					else high = mid;
+				}
+				for (const c of text) {
+					const width = Math.max(floor(c), Math.min(c.width, low));
+					if (width < c.width) c._oto_compact = true;
+					c.width = width;
+				}
+			}
 		}
 	}
+	// reports whose table fits the page's width, its long text columns narrowed rather than scrolled sideways
+	// (user, 2026-11-06: a long customer name widened prod's table past the screen)
+	const COMPACT = ["Customer Ledger Summary", "Supplier Ledger Summary"];
+	const NUMERIC = ["Currency", "Float", "Int", "Percent"];
 
 	// a cell cut all the same (past CONTENT_MAX): its whole text on hover
 	$(document).on("mouseover", "body.oto-fin-page #page-query-report .dt-cell__content", function () {
@@ -438,7 +470,7 @@
 			const cells = datatable.wrapper.querySelectorAll(`.dt-cell__content--col-${i + offset}, .dt-cell__content--header-${i + offset}`);
 			let short = 0;
 			for (const cell of cells) short = Math.max(short, cell.scrollWidth - cell.clientWidth);
-			if (short > 1 && column.width < CONTENT_MAX) {
+			if (short > 1 && column.width < CONTENT_MAX && !column._oto_compact) {
 				column.width = Math.min(CONTENT_MAX, column.width + short + 4);
 				changed = true;
 			}
