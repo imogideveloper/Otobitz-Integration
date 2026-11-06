@@ -41,6 +41,7 @@
 		"Purchase Invoice Trends",
 		"Trial Balance for Party",
 		"Payment Period Based On Invoice Date",
+		"Sales Partners Commission",
 	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
