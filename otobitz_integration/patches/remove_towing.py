@@ -11,6 +11,7 @@ import frappe
 
 DOCTYPES = ("Delivery Order Towing", "DO Towing Kondisi Item")
 WORKFLOW = "DO Towing Workflow"
+TOWING_STATES = ("Assigned", "Delivered", "Done", "Awaiting Dokument", "Pick Up")
 ROLES = ("Admin Towing", "Towing Driver")
 CLIENT_SCRIPTS = ("Delivery Order Towing-Form-SPK",)
 CUSTOM_FIELDS = (
@@ -44,11 +45,12 @@ def execute():
 			log.append(f"Client Script {name}")
 
 	if frappe.db.exists("Workflow", WORKFLOW):
-		states = set(frappe.get_all("Workflow Document State", {"parent": WORKFLOW}, pluck="state"))
 		frappe.delete_doc("Workflow", WORKFLOW, ignore_permissions=True, force=True)
 		log.append(f"Workflow {WORKFLOW}")
-		# its states, those no other workflow uses (Draft, Cancelled ... stay)
-		for state in states:
+		# its own states, if no other workflow uses them. Only the towing ones: a general state it shared
+		# (Draft, Cancelled) stays even when nothing uses it today. (Cancelled went on prod's first run and was
+		# put back from the backup, 2026-11-06.)
+		for state in TOWING_STATES:
 			if frappe.db.exists("Workflow Document State", {"state": state}):
 				continue
 			if frappe.db.exists("Workflow State", state):
