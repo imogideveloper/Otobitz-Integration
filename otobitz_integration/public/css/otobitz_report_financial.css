@@ -124,7 +124,10 @@ body.oto-fin-page #page-query-report .page-form.oto-fin-filters .oto-fin-field:n
 }
 
 body.oto-fin-page #page-query-report .page-form.oto-fin-filters .oto-fin-field {
-	min-width: 0;
+	/* !important: imogi_finance's list_filter_fit.js sets an inline min-width (and flex) on a MultiSelectList
+	   filter (Cost Center, Project), measured from its hidden search box, which made it wider than the others */
+	min-width: 0 !important;
+	flex: none !important;
 	padding-right: 0 !important;
 }
 
