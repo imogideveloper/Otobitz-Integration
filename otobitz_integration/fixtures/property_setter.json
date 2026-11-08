@@ -2525,7 +2525,7 @@
   "property": "columns",
   "property_type": "Int",
   "row_name": null,
-  "value": "1"
+  "value": "3"
  },
  {
   "default_value": null,
@@ -11741,7 +11741,7 @@
   "property": "columns",
   "property_type": "Int",
   "row_name": null,
-  "value": "2"
+  "value": "3"
  },
  {
   "default_value": null,
