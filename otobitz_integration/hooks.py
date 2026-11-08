@@ -176,6 +176,7 @@ doc_events = {
 		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series",
 		"before_validate": "otobitz_integration.sales_invoice.set_default_payment_terms",
 		"on_submit": [
+				"otobitz_integration.round_off_cost_center.follow_item_cost_center",
 				"otobitz_integration.sales_invoice.create_cogs_entry",
 				"otobitz_integration.sales_invoice.populate_journal_items"
 			],
@@ -207,6 +208,7 @@ doc_events = {
 		"validate": ["otobitz_integration.purchase_invoice.track", "otobitz_integration.uom_rounding.round_stock_qty"],
 		"before_update_after_submit": "otobitz_integration.purchase_invoice.track",
 		"on_submit": [
+			"otobitz_integration.round_off_cost_center.follow_item_cost_center",
 			"otobitz_integration.purchase_order.on_purchase_invoice",
 			"otobitz_integration.purchase_invoice.populate_journal_items"
 		],
