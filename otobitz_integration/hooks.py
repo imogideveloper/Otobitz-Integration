@@ -170,6 +170,7 @@ doc_events = {
 	"Sales Order": {
 		"before_insert": "otobitz_integration.sales_order.set_next_service_date",
 		"before_validate": "otobitz_integration.sales_order.set_default_payment_terms",
+		"validate": "otobitz_integration.uom_rounding.round_stock_qty",
 	},
 	"Sales Invoice": {
 		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series",
@@ -181,12 +182,13 @@ doc_events = {
 			"on_cancel": "otobitz_integration.sales_invoice.cancel_cogs_entry",
 		"validate": [
 			"otobitz_integration.sales_invoice.set_default_payment_reference",
-			"otobitz_integration.sales_invoice.set_default_accounting_date"
+			"otobitz_integration.sales_invoice.set_default_accounting_date",
+			"otobitz_integration.uom_rounding.round_stock_qty"
 		]
 	},
 	"Purchase Order": {
 		"autoname": "otobitz_integration.purchase_order.set_branch_naming_series",
-		"validate": "otobitz_integration.purchase_order.track",
+		"validate": ["otobitz_integration.purchase_order.track", "otobitz_integration.uom_rounding.round_stock_qty"],
 		"before_update_after_submit": "otobitz_integration.purchase_order.track",
 		"on_submit": "otobitz_integration.purchase_order.track_on_submit"
 	},
@@ -202,7 +204,7 @@ doc_events = {
 	},
 	"Purchase Invoice": {
 		"autoname": "otobitz_integration.purchase_invoice.set_branch_naming_series",
-		"validate": "otobitz_integration.purchase_invoice.track",
+		"validate": ["otobitz_integration.purchase_invoice.track", "otobitz_integration.uom_rounding.round_stock_qty"],
 		"before_update_after_submit": "otobitz_integration.purchase_invoice.track",
 		"on_submit": [
 			"otobitz_integration.purchase_order.on_purchase_invoice",
