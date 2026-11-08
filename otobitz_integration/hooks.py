@@ -168,7 +168,8 @@ after_app_install = "otobitz_integration.install.after_app_install"
 
 doc_events = {
 	"Sales Order": {
-		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
+		"before_insert": "otobitz_integration.sales_order.set_next_service_date",
+		"before_validate": "otobitz_integration.sales_order.set_default_payment_terms",
 	},
 	"Sales Invoice": {
 		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series",
