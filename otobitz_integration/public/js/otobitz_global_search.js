@@ -106,6 +106,21 @@
 		return null;
 	}
 
+	// doctype -> [[fieldname, label shown in the suggestion list], ...]; added when the doctype has the field
+	// and it is not already a list column.
+	var EXTRA_SEARCH_FIELDS = {
+		"Sales Order": [
+			["custom_plat_nomor", "Plat Nomor"],
+			["custom_nomor_rangka", "Nomor Rangka"],
+			["custom_nomor_mesin", "Nomor Mesin"],
+			["custom_otobitz_vehicle", "Vehicle (Chassis)"]
+		],
+		"Sales Invoice": [
+			["custom_plat_nomor", "Plat Nomor"],
+			["custom_otobitz_vehicle", "Vehicle (Chassis)"]
+		]
+	};
+
 	function deriveSearchFields(listview) {
 		var fields = [{ fieldname: "name", label: "ID" }];
 		var seen = { name: true };
@@ -120,6 +135,14 @@
 			if (SEARCHABLE_FIELDTYPES.indexOf(df.fieldtype) === -1) return;
 			seen[df.fieldname] = true;
 			fields.push({ fieldname: df.fieldname, label: df.label || df.fieldname });
+		});
+		// Important vehicle identifiers that live on the form, not in the list columns: plate, chassis, engine number.
+		// Anything else on the form is reachable through Group By / the Filter button.
+		(EXTRA_SEARCH_FIELDS[listview.doctype] || []).forEach(function (c) {
+			if (!seen[c[0]] && frappe.meta.has_field(listview.doctype, c[0])) {
+				seen[c[0]] = true;
+				fields.push({ fieldname: c[0], label: c[1] });
+			}
 		});
 		// Documents with an "items" table (Sales Order, Invoices, Purchase Order ...): also search inside the lines,
 		// by item code and item name. The filter is on the child doctype; Frappe joins the child table for us
