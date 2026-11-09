@@ -7,23 +7,14 @@
  "engine": "InnoDB",
  "field_order": [
   "package_name",
-  "col_a1",
   "code",
-  "col_a2",
   "company",
-  "section_b",
-  "vehicle_manufacture",
-  "col_b1",
-  "vehicle_model",
-  "col_b2",
-  "transmission",
-  "section_c",
   "is_active",
-  "col_c1",
   "is_all_branch",
-  "col_c2",
-  "col_c3",
-  "col_c4",
+  "column_break_main",
+  "vehicle_manufacture",
+  "vehicle_model",
+  "transmission",
   "section_branches",
   "branches",
   "section_items",
@@ -38,18 +29,10 @@
    "reqd": 1
   },
   {
-   "fieldname": "col_a1",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "code",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Kode"
-  },
-  {
-   "fieldname": "col_a2",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "company",
@@ -57,53 +40,16 @@
    "in_list_view": 1,
    "label": "Company",
    "options": "Company",
-   "reqd": 1
-  },
-  {
-   "fieldname": "section_b",
-   "fieldtype": "Section Break",
-   "hide_border": 1
-  },
-  {
-   "fieldname": "vehicle_manufacture",
-   "fieldtype": "Data",
-   "label": "Merk Kendaraan"
-  },
-  {
-   "fieldname": "col_b1",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "vehicle_model",
-   "fieldtype": "Data",
-   "label": "Model Kendaraan"
-  },
-  {
-   "fieldname": "col_b2",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "ALL",
-   "fieldname": "transmission",
-   "fieldtype": "Select",
-   "label": "Transmisi",
-   "options": "ALL\nAT\nMT\nCVT"
-  },
-  {
-   "fieldname": "section_c",
-   "fieldtype": "Section Break",
-   "hide_border": 1
+   "reqd": 1,
+   "in_standard_filter": 1
   },
   {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Aktif"
-  },
-  {
-   "fieldname": "col_c1",
-   "fieldtype": "Column Break"
+   "label": "Aktif",
+   "in_standard_filter": 1
   },
   {
    "default": "1",
@@ -112,16 +58,28 @@
    "label": "Semua Cabang"
   },
   {
-   "fieldname": "col_c2",
+   "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "col_c3",
-   "fieldtype": "Column Break"
+   "fieldname": "vehicle_manufacture",
+   "fieldtype": "Data",
+   "label": "Merk Kendaraan",
+   "in_standard_filter": 1
   },
   {
-   "fieldname": "col_c4",
-   "fieldtype": "Column Break"
+   "fieldname": "vehicle_model",
+   "fieldtype": "Data",
+   "label": "Model Kendaraan"
+  },
+  {
+   "default": "ALL",
+   "fieldname": "transmission",
+   "fieldtype": "Select",
+   "label": "Transmisi",
+   "options": "ALL\nAT\nMT\nCVT",
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "section_branches",
@@ -193,5 +151,7 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "title_field": "package_name"
+ "title_field": "package_name",
+ "track_changes": 1,
+ "default_print_format": "Service Package"
 }
