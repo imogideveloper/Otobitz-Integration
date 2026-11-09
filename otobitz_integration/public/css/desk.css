@@ -186,3 +186,73 @@
 body.oto-capturing * {
 	scrollbar-width: none !important;
 }
+
+/* Every toggle as the General Ledger filter switches (user, 2026-11-09): 40x20 track, grey knob on the left when off,
+   white knob on the right over blue when on. Forms keep their own label | toggle layout; only the toggle itself is
+   redrawn (otobitz_switch_check.js renders every Check field as label.switch-control > .switch-visual > .switch-thumb).
+   The General Ledger / report filters hide .switch-visual and draw the checkbox itself (otobitz_report_financial.css),
+   so they are unaffected. */
+label.switch-control > .switch-visual {
+	position: relative !important;
+	box-sizing: border-box !important;
+	width: 40px !important;
+	height: 20px !important;
+	padding: 0 !important;
+	border: 1px solid var(--gray-600, #616161) !important;
+	border-radius: 10px !important;
+	background-color: var(--fg-color, #fff) !important;
+	box-shadow: none !important;
+	transition: background-color 0.15s, border-color 0.15s !important;
+}
+
+label.switch-control > .switch-visual > .switch-thumb {
+	position: absolute !important;
+	top: 50% !important;
+	left: 4px !important;
+	width: 12px !important;
+	height: 12px !important;
+	margin-top: -6px !important;
+	border-radius: 50% !important;
+	background-color: var(--gray-600, #616161) !important;
+	box-shadow: none !important;
+	transform: none !important;
+	transition: left 0.15s, background-color 0.15s !important;
+}
+
+label.switch-control > .input-area:has(input:checked) ~ .switch-visual {
+	border-color: #2d7ff9 !important;
+	background-color: #2d7ff9 !important;
+}
+
+label.switch-control > .input-area:has(input:checked) ~ .switch-visual > .switch-thumb {
+	left: 23px !important;
+	background-color: #fff !important;
+	transform: none !important;
+}
+
+[data-theme="dark"] label.switch-control > .input-area:has(input:checked) ~ .switch-visual {
+	border-color: #5b9bff !important;
+	background-color: #5b9bff !important;
+}
+
+label.switch-control:hover > .input-area:not(:has(input:checked)) ~ .switch-visual,
+label.switch-control:hover > .input-area:has(input:checked) ~ .switch-visual {
+	filter: brightness(0.95);
+}
+
+label.switch-control > .input-area:has(input:focus-visible) ~ .switch-visual {
+	outline: 2px solid #2d7ff9 !important;
+	outline-offset: 1px !important;
+	box-shadow: none !important;
+}
+
+label.switch-control:has(input:disabled) > .switch-visual {
+	opacity: 0.5 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	label.switch-control > .switch-visual,
+	label.switch-control > .switch-visual > .switch-thumb {
+		transition: none !important;
+	}
+}
