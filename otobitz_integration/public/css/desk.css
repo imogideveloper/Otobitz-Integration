@@ -176,11 +176,6 @@
 	flex: 0 0 230px !important;
 	min-width: 0 !important;
 }
-[data-page-route="List/Journal Entry/List"] .frappe-list .list-row .list-row-col[data-fieldname="custom_otobitz_endpoint"],
-[data-page-route="List/Journal Entry/List"] .frappe-list .list-row-head .list-row-col[data-fieldname="custom_otobitz_endpoint"] {
-	flex: 0 0 190px !important;
-	min-width: 0 !important;
-}
 
 /* Page screenshot (otobitz_screenshot.js): no scrollbars in the captured image, e.g. on a long tab bar. */
 body.oto-capturing * {

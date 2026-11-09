@@ -19,7 +19,9 @@
   "error_category",
   "error_message",
   "section_break_raw",
-  "raw_data"
+  "raw_data_view",
+  "raw_data",
+  "raw_data_table"
  ],
  "fields": [
   {
@@ -103,11 +105,26 @@
    "label": "Data Mentah (dipakai ulang buat retry)"
   },
   {
+   "default": "JSON",
+   "fieldname": "raw_data_view",
+   "fieldtype": "Select",
+   "label": "Tampilan",
+   "no_copy": 1,
+   "options": "JSON\nTabel"
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view != \"Tabel\"",
    "fieldname": "raw_data",
    "fieldtype": "Code",
    "label": "Raw Data",
    "options": "JSON",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view == \"Tabel\"",
+   "fieldname": "raw_data_table",
+   "fieldtype": "HTML",
+   "label": "Raw Data (Tabel)"
   }
  ],
  "grid_page_length": 50,
