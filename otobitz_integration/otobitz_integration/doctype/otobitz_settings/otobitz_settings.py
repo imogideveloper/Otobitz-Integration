@@ -28,6 +28,62 @@ class OtoBitzSettings(Document):
 			frappe.msgprint(frappe._("Sync has been queued."))
 
 	@frappe.whitelist()
+	def sync_from_date(self):
+		"""Manually re-covers a date range whose data might be incomplete -
+		e.g. the live OtoBitz endpoint having been down for a day or two -
+		by rewinding just the date-windowed syncs' watermarks back to
+		manual_sync_from_date and re-running them right now, instead of
+		waiting for the hourly job's own small overlap window to eventually
+		close the gap on its own. See orchestrator.run_manual_sync_from_date()."""
+		frappe.only_for("System Manager")
+
+		if not self.manual_sync_from_date:
+			frappe.throw(frappe._("Pick a date first."))
+
+		from otobitz_integration.otobitz_integration.sync.orchestrator import run_manual_sync_from_date
+
+		if frappe.conf.developer_mode:
+			run_manual_sync_from_date(self.manual_sync_from_date)
+		else:
+			frappe.enqueue(
+				"otobitz_integration.otobitz_integration.sync.orchestrator.run_manual_sync_from_date",
+				queue="long",
+				timeout=3600,
+				job_id="otobitz_manual_sync",
+				deduplicate=True,
+				from_date=self.manual_sync_from_date,
+			)
+			frappe.msgprint(frappe._("Manual sync has been queued."))
+
+	@frappe.whitelist()
+	def fix_customer_names(self):
+		"""Re-resolves every OtoBitz Customer's name against
+		datacustomerbynumber again and propagates the fix onto already-
+		created Sales Order/Sales Invoice documents too - see
+		sync_service_orders.backfill_customer_names()'s own docstring for
+		why this is ever needed in the first place (not every
+		datacustomerbynumber lookup succeeds even with retries, under a
+		sustained rate limit - a Customer created at exactly the wrong
+		moment is stuck with its scrambled name until this runs again).
+		Safe to run anytime; already-correct names just cost a no-op
+		lookup each."""
+		frappe.only_for("System Manager")
+
+		from otobitz_integration.otobitz_integration.sync.sync_service_orders import backfill_customer_names
+
+		if frappe.conf.developer_mode:
+			return backfill_customer_names()
+		else:
+			frappe.enqueue(
+				"otobitz_integration.otobitz_integration.sync.sync_service_orders.backfill_customer_names",
+				queue="long",
+				timeout=3600,
+				job_id="otobitz_fix_customer_names",
+				deduplicate=True,
+			)
+			frappe.msgprint(frappe._("Fixing customer names has been queued."))
+
+	@frappe.whitelist()
 	def lookup_wo(self):
 		"""Looks up and syncs whatever's currently in `lookup_wo_number` via
 		`otoxpertsoandpartpernomor`, right now - see

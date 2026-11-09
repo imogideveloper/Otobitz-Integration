@@ -1050,7 +1050,16 @@ def backfill_customer_names() -> dict:
 	costs one no-op lookup. Can take a while for a large customer base (one
 	API call each, no bulk variant of this endpoint) - re-run it again later
 	for whatever didn't get through this time, same as any other backfill
-	here."""
+	here.
+
+	Also propagates the corrected customer_name onto every Sales Order/
+	Sales Invoice that still has the stale (scrambled) value cached on the
+	document itself - fixing the Customer master alone doesn't touch
+	already-created transactions, since customer_name there is its own
+	stored field (set once at creation, never re-fetched for an existing
+	document), not a live lookup. This is why "Customer" kept showing
+	scrambled names in the Sales Order list even right after a Customer's
+	name was corrected."""
 	frappe.only_for("System Manager")
 	import time
 
@@ -1084,4 +1093,32 @@ def backfill_customer_names() -> dict:
 		frappe.db.commit()
 		time.sleep(0.2)
 
-	return {"checked": checked, "fixed": fixed, "failed": failed}
+	so_propagated = frappe.db.sql(
+		"""select count(*) from `tabSales Order` so join `tabCustomer` c on c.name = so.customer
+		where so.customer_name != c.customer_name"""
+	)[0][0]
+	si_propagated = frappe.db.sql(
+		"""select count(*) from `tabSales Invoice` si join `tabCustomer` c on c.name = si.customer
+		where si.customer_name != c.customer_name"""
+	)[0][0]
+	frappe.db.sql(
+		"""update `tabSales Order` so
+		join `tabCustomer` c on c.name = so.customer
+		set so.customer_name = c.customer_name
+		where so.customer_name != c.customer_name"""
+	)
+	frappe.db.sql(
+		"""update `tabSales Invoice` si
+		join `tabCustomer` c on c.name = si.customer
+		set si.customer_name = c.customer_name
+		where si.customer_name != c.customer_name"""
+	)
+	frappe.db.commit()
+
+	return {
+		"checked": checked,
+		"fixed": fixed,
+		"failed": failed,
+		"so_names_propagated": so_propagated,
+		"si_names_propagated": si_propagated,
+	}

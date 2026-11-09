@@ -44,12 +44,20 @@ NETWORK_RETRY_DELAY_SECONDS = 5
 # "give up" - the actual cause of most datacustomerbynumber lookups in
 # sync_service_orders.py silently failing and leaving Customer names
 # scrambled forever, since that lookup only ever runs once per customer).
-RATE_LIMIT_RETRIES = 4
+RATE_LIMIT_RETRIES = 6
 RATE_LIMIT_RETRY_DELAY_SECONDS = 20
 
 
 class OtoBitzAPIError(Exception):
-	pass
+	def __init__(self, message, retry_after=None):
+		super().__init__(message)
+		# OtoBitz's "Too Many Requests" body includes its own
+		# retry_after (seconds) - confirmed live: 56, not the
+		# RATE_LIMIT_RETRY_DELAY_SECONDS guess below. Using a fixed 20s
+		# delay regardless of what the server actually asked for was
+		# exactly why 4 retries in a row still wasn't enough - every
+		# retry fired back into the same still-active rate limit window.
+		self.retry_after = retry_after
 
 
 def get_settings():
@@ -137,7 +145,8 @@ def call_api(endpoint: str, payload: dict | None = None) -> dict:
 			rate_limit_attempt += 1
 			if rate_limit_attempt >= RATE_LIMIT_RETRIES:
 				raise
-			time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
+			delay = cint(getattr(exc, "retry_after", None)) or RATE_LIMIT_RETRY_DELAY_SECONDS
+			time.sleep(delay)
 
 
 def _call_api_once(endpoint: str, payload: dict | None) -> dict:
@@ -169,6 +178,9 @@ def _call_api_once(endpoint: str, payload: dict | None) -> dict:
 		raise OtoBitzAPIError(f"Non-JSON response calling {endpoint}: {response.text[:500]}") from exc
 
 	if data.get("error"):
-		raise OtoBitzAPIError(data.get("message") or f"OtoBitz API returned an error calling {endpoint}")
+		raise OtoBitzAPIError(
+			data.get("message") or f"OtoBitz API returned an error calling {endpoint}",
+			retry_after=data.get("retry_after"),
+		)
 
 	return data

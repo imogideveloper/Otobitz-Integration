@@ -30,6 +30,8 @@
   "last_booking_sync_date",
   "last_orderparts_sync_date",
   "last_orderpekerjaanluar_sync_date",
+  "section_break_manual_sync",
+  "manual_sync_from_date",
   "section_break_lookup",
   "lookup_wo_number"
  ],
@@ -188,6 +190,17 @@
    "label": "Last Order Pekerjaan Luar Sync Date",
    "read_only": 1,
    "description": "Watermark for masterdata_orderpekerjaanluar's incremental date-window sync."
+  },
+  {
+   "fieldname": "section_break_manual_sync",
+   "fieldtype": "Section Break",
+   "label": "Sinkronisasi Manual (Per Tanggal)"
+  },
+  {
+   "description": "Sinkron ulang Sales Order, Payment Entry, Journal Entry, dan Purchase Order dari tanggal ini sampai hari ini - buat nutup data yang bolong kalau endpoint OtoBitz sempat down beberapa hari. Gak bakal mundurin watermark yang udah lebih awal dari tanggal ini (cuma nutup gap, gak pernah ngelewatin data yang udah tersinkron).",
+   "fieldname": "manual_sync_from_date",
+   "fieldtype": "Date",
+   "label": "Sync Ulang dari Tanggal"
   },
   {
    "fieldname": "section_break_lookup",

@@ -31,6 +31,50 @@ frappe.ui.form.on("OtoBitz Settings", {
 
 		frm.add_custom_button(__("Sync Now"), () => frm.call("sync_now").then(() => frm.reload_doc()));
 
+		frm.add_custom_button(__("Benerin Nama Customer"), () => {
+			frappe.confirm(
+				__(
+					"Cek ulang semua nama Customer yang masih acak (gagal didekripsi) ke OtoBitz, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Bisa makan waktu agak lama."
+				),
+				() => {
+					frappe.dom.freeze(__("Membenarkan nama customer..."));
+					frm.call("fix_customer_names")
+						.then((r) => {
+							frappe.dom.unfreeze();
+							const data = r.message;
+							const msg = data
+								? __("Dicek: {0}, dibenerin: {1}, gagal: {2}", [data.checked, data.fixed, data.failed])
+								: __("Sudah diantrikan - cek lagi beberapa saat lagi.");
+							frappe.show_alert({ message: msg, indicator: "green" }, 7);
+						})
+						.catch(() => frappe.dom.unfreeze());
+				}
+			);
+		});
+
+		frm.add_custom_button(__("Sync Ulang dari Tanggal"), () => {
+			if (!frm.doc.manual_sync_from_date) {
+				frappe.msgprint(__("Pilih tanggal dulu di field \"Sync Ulang dari Tanggal\"."));
+				return;
+			}
+			frappe.confirm(
+				__(
+					"Sinkronisasi ulang Sales Order, Payment Entry, Journal Entry, dan Purchase Order dari tanggal {0} sampai hari ini?",
+					[frappe.datetime.str_to_user(frm.doc.manual_sync_from_date)]
+				),
+				() => {
+					frappe.dom.freeze(__("Menjalankan sinkronisasi manual..."));
+					frm.call("sync_from_date")
+						.then(() => {
+							frappe.dom.unfreeze();
+							frappe.show_alert({ message: __("Sinkronisasi manual selesai / sudah diantrikan."), indicator: "green" });
+							frm.reload_doc();
+						})
+						.catch(() => frappe.dom.unfreeze());
+				}
+			);
+		});
+
 		frm.add_custom_button(__("Look Up Work Order"), () => {
 			if (!frm.doc.lookup_wo_number) {
 				frappe.msgprint(__("Enter a Work Order Number (nomorwo) first."));

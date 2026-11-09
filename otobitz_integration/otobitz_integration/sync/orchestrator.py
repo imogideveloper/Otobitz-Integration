@@ -18,7 +18,7 @@ genuinely needed; it's just not automatic.
 """
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import getdate, now_datetime
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError
 from otobitz_integration.otobitz_integration.sync.common import acquire_sync_lock, release_sync_lock, renew_sync_lock
@@ -64,6 +64,21 @@ SYNC_STEPS = [
 	("cogsparts", sync_cogsparts),
 ]
 
+# The subset of SYNC_STEPS that's actually date-windowed (reads/advances its
+# own watermark via get_sync_window() in its module) - everything else above
+# (vehicle masters, suppliers, spareparts, ...) has no date filter at all, so
+# "re-sync from a date" is meaningless for those. Paired with each step's own
+# OtoBitz Settings watermark field, so run_manual_sync_from_date() below can
+# rewind just these before re-running them.
+DATE_WINDOWED_STEPS = [
+	("otoxpertsoandpart", sync_service_orders, "last_so_sync_date"),
+	("penerimaanuang", sync_penerimaan, "last_penerimaan_sync_date"),
+	("pengeluaranuang", sync_pengeluaran, "last_pengeluaran_sync_date"),
+	("penerimaanuangmukabooking", sync_booking, "last_booking_sync_date"),
+	("masterdata_orderparts", sync_orderparts, "last_orderparts_sync_date"),
+	("masterdata_orderpekerjaanluar", sync_orderpekerjaanluar, "last_orderpekerjaanluar_sync_date"),
+]
+
 
 def trigger_hourly_sync():
 	"""Scheduler entrypoint for hooks.py's scheduler_events["hourly_long"].
@@ -94,11 +109,43 @@ def run_hourly_sync():
 		release_sync_lock()
 
 
-def _run_all_steps():
+def run_manual_sync_from_date(from_date):
+	"""Rewinds every date-windowed step's own watermark back to `from_date` -
+	only when that actually widens the window (a watermark already earlier
+	than `from_date` is left alone, so this only ever closes a gap, never
+	skips data by moving a watermark *forward*) - then re-runs just those 6
+	steps, not the full 18-step SYNC_STEPS (no reason to re-pull master
+	data like suppliers/vehicle types/spareparts, which were never
+	date-filtered to begin with).
+
+	For exactly the scenario this was built for: the live OtoBitz endpoint
+	going down for a day or two (confirmed to happen - see
+	otoxpertsoandpartnondecrypt's own fallback in OtoBitz Settings) leaves a
+	gap that the hourly job's small overlap window won't fully close on its
+	own; this lets an admin pick the date and force it closed right now,
+	from the Desk, no code/restart needed."""
+	if not acquire_sync_lock():
+		frappe.throw(frappe._("A sync is already in progress - try again once it finishes."))
+
+	try:
+		from_date = getdate(from_date)
+		for _, _, watermark_field in DATE_WINDOWED_STEPS:
+			current = frappe.db.get_single_value("OtoBitz Settings", watermark_field)
+			if not current or getdate(current) > from_date:
+				frappe.db.set_single_value("OtoBitz Settings", watermark_field, from_date, update_modified=False)
+		frappe.db.commit()
+
+		_run_all_steps([(endpoint, sync_fn) for endpoint, sync_fn, _ in DATE_WINDOWED_STEPS])
+	finally:
+		release_sync_lock()
+
+
+def _run_all_steps(steps=None):
+	steps = SYNC_STEPS if steps is None else steps
 	overall_status = "Success"
 	problem_logs = []
 
-	for endpoint, sync_fn in SYNC_STEPS:
+	for endpoint, sync_fn in steps:
 		renew_sync_lock()
 		started_at = now_datetime()
 		log = frappe.new_doc("OtoBitz Sync Log")
