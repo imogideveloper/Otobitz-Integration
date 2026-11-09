@@ -1,0 +1,197 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:PKG-{#####}",
+ "creation": "2026-11-09 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "package_name",
+  "col_a1",
+  "code",
+  "col_a2",
+  "company",
+  "section_b",
+  "vehicle_manufacture",
+  "col_b1",
+  "vehicle_model",
+  "col_b2",
+  "transmission",
+  "section_c",
+  "is_active",
+  "col_c1",
+  "is_all_branch",
+  "col_c2",
+  "col_c3",
+  "col_c4",
+  "section_branches",
+  "branches",
+  "section_items",
+  "items"
+ ],
+ "fields": [
+  {
+   "fieldname": "package_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Paket",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_a1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Kode"
+  },
+  {
+   "fieldname": "col_a2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_b",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
+   "fieldname": "vehicle_manufacture",
+   "fieldtype": "Data",
+   "label": "Merk Kendaraan"
+  },
+  {
+   "fieldname": "col_b1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vehicle_model",
+   "fieldtype": "Data",
+   "label": "Model Kendaraan"
+  },
+  {
+   "fieldname": "col_b2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "ALL",
+   "fieldname": "transmission",
+   "fieldtype": "Select",
+   "label": "Transmisi",
+   "options": "ALL\nAT\nMT\nCVT"
+  },
+  {
+   "fieldname": "section_c",
+   "fieldtype": "Section Break",
+   "hide_border": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Aktif"
+  },
+  {
+   "fieldname": "col_c1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_all_branch",
+   "fieldtype": "Check",
+   "label": "Semua Cabang"
+  },
+  {
+   "fieldname": "col_c2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "col_c3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "col_c4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_branches",
+   "fieldtype": "Section Break",
+   "label": "Cabang",
+   "depends_on": "eval:!doc.is_all_branch"
+  },
+  {
+   "fieldname": "branches",
+   "fieldtype": "Table",
+   "label": "",
+   "mandatory_depends_on": "eval:!doc.is_all_branch",
+   "options": "Service Package Branch"
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Isi Paket",
+   "options": "Service Package Item",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "Service Package",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Sales User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "package_name,code,vehicle_model",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "package_name"
+}
