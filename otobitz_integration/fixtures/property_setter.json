@@ -13,7 +13,7 @@
   "property": "default",
   "property_type": "Text",
   "row_name": null,
-  "value": "Purchase Tax - PAO"
+  "value": "Purchase Tax - O"
  },
  {
   "default_value": null,
@@ -11677,7 +11677,7 @@
   "property": "default",
   "property_type": "Text",
   "row_name": null,
-  "value": "Sales Tax - PAO"
+  "value": "Sales Tax - O"
  },
  {
   "default_value": null,
