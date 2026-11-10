@@ -77,13 +77,13 @@
 			// box pinned to the left edge while pushing every sibling after it
 			// (Filter/Group/Favorites/sort) to the right edge of the row - same
 			// right-aligned spot they sit in on a plain, un-patched list view.
-			+ "#ob-gs-wrap{position:relative;margin:0 auto 0 0;flex:0 0 220px;order:-1}"
+			+ "#ob-gs-wrap{position:relative;margin:0 auto 0 0;flex:0 0 340px;order:-1}"
 			+ "#ob-gs-input-group{position:relative;display:flex;align-items:center}"
 			+ "#ob-gs-input-group .ob-gs-icon{position:absolute;left:8px;display:flex;color:#8d99a6;pointer-events:none}"
 			+ "#ob-gs-input{width:100%;height:30px;padding:0 28px 0 30px;border:1px solid var(--border-color,#d1d8dd);border-radius:6px;background:var(--control-bg,#fff);font-size:13px}"
 			+ "#ob-gs-clear{position:absolute;right:6px;display:none;color:#8d99a6;cursor:pointer;padding:2px}"
 			+ "#ob-gs-wrap.has-value #ob-gs-clear{display:flex}"
-			+ "#ob-gs-dd{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:360px;background:var(--fg-color,#fff);border:1px solid var(--border-color,#d1d8dd);border-radius:8px;max-height:280px;overflow-y:auto;z-index:9999;padding:6px 0;box-shadow:var(--shadow-lg,0 4px 16px rgba(0,0,0,.12))}"
+			+ "#ob-gs-dd{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:480px;background:var(--fg-color,#fff);border:1px solid var(--border-color,#d1d8dd);border-radius:8px;max-height:280px;overflow-y:auto;z-index:9999;padding:6px 0;box-shadow:var(--shadow-lg,0 4px 16px rgba(0,0,0,.12))}"
 			+ ".ob-gs-row{padding:7px 12px;cursor:pointer;font-size:13px;color:#36414c;white-space:nowrap}"
 			+ ".ob-gs-row:hover,.ob-gs-row.is-active{background:#f5f7fa}"
 			+ ".ob-gs-row b{font-weight:600}"
@@ -106,6 +106,21 @@
 		return null;
 	}
 
+	// doctype -> [[fieldname, label shown in the suggestion list], ...]; added when the doctype has the field
+	// and it is not already a list column.
+	var EXTRA_SEARCH_FIELDS = {
+		"Sales Order": [
+			["custom_plat_nomor", "Plat Nomor"],
+			["custom_nomor_rangka", "Nomor Rangka"],
+			["custom_nomor_mesin", "Nomor Mesin"],
+			["custom_otobitz_vehicle", "Vehicle (Chassis)"]
+		],
+		"Sales Invoice": [
+			["custom_plat_nomor", "Plat Nomor"],
+			["custom_otobitz_vehicle", "Vehicle (Chassis)"]
+		]
+	};
+
 	function deriveSearchFields(listview) {
 		var fields = [{ fieldname: "name", label: "ID" }];
 		var seen = { name: true };
@@ -121,6 +136,25 @@
 			seen[df.fieldname] = true;
 			fields.push({ fieldname: df.fieldname, label: df.label || df.fieldname });
 		});
+		// Important vehicle identifiers that live on the form, not in the list columns: plate, chassis, engine number.
+		// Anything else on the form is reachable through Group By / the Filter button.
+		(EXTRA_SEARCH_FIELDS[listview.doctype] || []).forEach(function (c) {
+			if (!seen[c[0]] && frappe.meta.has_field(listview.doctype, c[0])) {
+				seen[c[0]] = true;
+				fields.push({ fieldname: c[0], label: c[1] });
+			}
+		});
+		// Documents with an "items" table (Sales Order, Invoices, Purchase Order ...): also search inside the lines,
+		// by item code and item name. The filter is on the child doctype; Frappe joins the child table for us
+		// (frappe/model/db_query.py), and get_args() below asks for distinct parents so an order with several
+		// matching lines is listed once.
+		var items_df = frappe.meta.get_docfield(listview.doctype, "items");
+		var child = items_df && items_df.fieldtype === "Table" && items_df.options;
+		if (child) {
+			[["item_code", __("Barang (kode)")], ["item_name", __("Barang (nama)")]].forEach(function (c) {
+				if (frappe.meta.has_field(child, c[0])) fields.push({ fieldname: c[0], label: c[1], doctype: child });
+			});
+		}
 		return fields;
 	}
 
@@ -154,8 +188,9 @@
 			var args = _get_args();
 			if (!applied_fieldname && live_term && SEARCH_FIELDS.length) {
 				args.or_filters = SEARCH_FIELDS.map(function (f) {
-					return [listview.doctype, f.fieldname, "like", "%" + live_term + "%"];
+					return [f.doctype || listview.doctype, f.fieldname, "like", "%" + live_term + "%"];
 				});
+				args.distinct = 1; // a parent whose several lines match must be listed once
 			}
 			return args;
 		};
@@ -201,7 +236,7 @@
 				listview.filter_area.remove(applied_fieldname);
 			}
 			applied_fieldname = f.fieldname;
-			listview.filter_area.add([[listview.doctype, f.fieldname, "like", "%" + term + "%"]]);
+			listview.filter_area.add([[f.doctype || listview.doctype, f.fieldname, "like", "%" + term + "%"]]);
 			$w.find("#ob-gs-input").val("");
 			$w.find("#ob-gs-dd").hide();
 			active_idx = -1;

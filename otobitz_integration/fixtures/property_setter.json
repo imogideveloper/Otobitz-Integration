@@ -11469,7 +11469,7 @@
   "property": "in_list_view",
   "property_type": "Check",
   "row_name": null,
-  "value": "1"
+  "value": "0"
  },
  {
   "default_value": null,
