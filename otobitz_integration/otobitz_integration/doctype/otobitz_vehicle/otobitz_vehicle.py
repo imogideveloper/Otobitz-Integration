@@ -3,10 +3,69 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import getdate, nowdate
 
 
 class OtoBitzVehicle(Document):
-	pass
+	def validate(self):
+		self.track_owner()
+
+	def track_owner(self):
+		"""Keep `owner_history` in step with `customer`, whatever changed it: the
+		"Ganti Pemilik" button, a Sales Order, the OtoBitz sync (sync/common.py
+		get_or_create_vehicle) or a plain edit. The row for the previous owner is
+		closed with today's date and a row for the new one is opened. Flags
+		`owner_source` / `owner_date` / `owner_note` are set by those callers;
+		without them the change counts as a manual one made today.
+		"""
+		before = self.get_doc_before_save()
+		old = before.customer if before else None
+		new = self.customer
+		if old == new and (self.owner_history or not new):
+			return
+
+		when = getdate(self.flags.get("owner_date") or nowdate())
+		open_rows = [r for r in self.owner_history if not r.to_date]
+		if old and old != new and not any(r.customer == old for r in self.owner_history):
+			# vehicle that predates the history: keep its previous owner on record
+			self.append("owner_history", {"customer": old, "source": "Sinkronisasi", "to_date": when})
+		for row in open_rows:
+			row.to_date = when
+		if new:
+			self.append(
+				"owner_history",
+				{
+					"customer": new,
+					"from_date": when,
+					"source": self.flags.get("owner_source") or frappe.flags.get("owner_source") or "Manual",
+					"changed_by": frappe.session.user,
+					"notes": self.flags.get("owner_note"),
+				},
+			)
+
+
+@frappe.whitelist()
+def change_owner(vehicle, customer, date=None, note=None, source="Manual"):
+	"""Change a vehicle's owner and record it in the owner history.
+
+	Used by the "Ganti Pemilik" button on the vehicle form and by the prompt on a
+	hand-made Sales Order. The history row itself is written by
+	OtoBitzVehicle.track_owner when the document saves.
+	"""
+	if source not in ("Manual", "Sales Order"):
+		source = "Manual"
+	if not customer or not frappe.db.exists("Customer", customer):
+		frappe.throw(frappe._("Customer {0} not found").format(customer))
+	doc = frappe.get_doc("OtoBitz Vehicle", vehicle)
+	doc.check_permission("write")
+	if doc.customer == customer:
+		frappe.throw(frappe._("{0} is already the owner of this vehicle").format(customer))
+	doc.flags.owner_source = source
+	doc.flags.owner_date = date
+	doc.flags.owner_note = note
+	doc.customer = customer
+	doc.save()
+	return doc.customer
 
 
 @frappe.whitelist()

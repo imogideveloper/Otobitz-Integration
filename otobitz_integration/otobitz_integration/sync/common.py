@@ -321,7 +321,12 @@ def get_or_create_vehicle(
 	}
 	values = {k: v for k, v in values.items() if v is not None}
 
-	name, _, _ = upsert("OtoBitz Vehicle", {"norangka": norangka}, values, ignore_mandatory=True)
+	# any owner change this upsert makes is recorded in the vehicle's owner history as coming from the sync
+	frappe.flags.owner_source = "Sinkronisasi"
+	try:
+		name, _, _ = upsert("OtoBitz Vehicle", {"norangka": norangka}, values, ignore_mandatory=True)
+	finally:
+		frappe.flags.owner_source = None
 	return name
 
 
