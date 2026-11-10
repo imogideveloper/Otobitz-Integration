@@ -14,6 +14,12 @@
   "column_break_conn",
   "username",
   "password",
+  "section_break_so_endpoint",
+  "so_sync_endpoint",
+  "so_sync_auto_fallback",
+  "column_break_so_endpoint",
+  "so_sync_fallback_endpoint",
+  "customer_lookup_endpoint",
   "section_break_status",
   "last_sync_status",
   "column_break_status",
@@ -79,6 +85,45 @@
    "fieldtype": "Password",
    "label": "Password",
    "mandatory_depends_on": "enabled"
+  },
+  {
+   "fieldname": "section_break_so_endpoint",
+   "fieldtype": "Section Break",
+   "label": "Konfigurasi Endpoint SO (Fallback Otomatis)"
+  },
+  {
+   "default": "otoxpertsoandpartnondecrypt",
+   "description": "Endpoint utama buat tarik data WO/SO. otoxpertsoandpartnondecrypt itu cepat tapi data customer-nya diacak (butuh lookup terpisah, lihat Endpoint Lookup Nama Customer di bawah) - otoxpertsoandpart itu lebih lambat/gampang timeout kalau datanya banyak tapi datanya udah asli langsung, gak butuh lookup.",
+   "fieldname": "so_sync_endpoint",
+   "fieldtype": "Select",
+   "label": "Endpoint Utama",
+   "options": "otoxpertsoandpartnondecrypt\notoxpertsoandpart"
+  },
+  {
+   "default": "1",
+   "description": "Kalau Endpoint Utama gagal/down (timeout, 5xx, dll), otomatis coba lagi pakai Endpoint Fallback di sisi kanan - tanpa perlu ubah kode atau restart apapun, cukup ganti dropdown ini kapan saja.",
+   "fieldname": "so_sync_auto_fallback",
+   "fieldtype": "Check",
+   "label": "Otomatis Alihkan ke Fallback"
+  },
+  {
+   "fieldname": "column_break_so_endpoint",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "otoxpertsoandpart",
+   "depends_on": "so_sync_auto_fallback",
+   "fieldname": "so_sync_fallback_endpoint",
+   "fieldtype": "Select",
+   "label": "Endpoint Fallback",
+   "options": "otoxpertsoandpartnondecrypt\notoxpertsoandpart"
+  },
+  {
+   "default": "datacustomerbynumber",
+   "description": "Dipakai cuma kalau Endpoint Utama/Fallback yang berhasil dipanggil adalah varian 'nondecrypt' - cocokkan customerid, lalu tarik nama/alamat/no hp/email asli dari sini biar gak kebawa data acakan. Tidak dipanggil sama sekali kalau endpoint yang aktif sudah otoxpertsoandpart biasa (datanya sudah asli dari sananya).",
+   "fieldname": "customer_lookup_endpoint",
+   "fieldtype": "Data",
+   "label": "Endpoint Lookup Nama Customer"
   },
   {
    "fieldname": "section_break_status",

@@ -1,0 +1,198 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-09 00:00:00.000000",
+ "description": "Arsip mentah 1:1 dari endpoint penerimaanuang (Payment Entry) dan pengeluaranuang (Journal Entry/Payment Entry) - 1 baris di sini = 1 baris persis seperti yang dikirim OtoBitz, terlepas dari dokumen bisnis (Payment Entry/Journal Entry) yang dibangun darinya berhasil dibuat atau tidak.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "dedup_key",
+  "section_break_main",
+  "endpoint",
+  "nomor",
+  "tanggal",
+  "status",
+  "column_break_main",
+  "kode_cabang",
+  "namacabang",
+  "nilai",
+  "section_break_detail",
+  "noreferensi",
+  "paymentmetode",
+  "column_break_detail",
+  "namasupplier",
+  "kodeaccount",
+  "keterangan",
+  "section_break_raw",
+  "raw_data_view",
+  "raw_data",
+  "raw_data_table"
+ ],
+ "fields": [
+  {
+   "fieldname": "dedup_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Dedup Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "section_break_main",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "endpoint",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Endpoint",
+   "options": "penerimaanuang\npengeluaranuang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nomor",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Nomor",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tanggal",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tanggal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "kode_cabang",
+   "fieldtype": "Data",
+   "label": "Kode Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "namacabang",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nilai",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Nilai",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_detail",
+   "fieldtype": "Section Break",
+   "label": "Detail"
+  },
+  {
+   "description": "Diisi untuk baris penerimaanuang - nomor faktur Sales Invoice yang dibayar.",
+   "fieldname": "noreferensi",
+   "fieldtype": "Data",
+   "label": "No Referensi (Faktur)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "paymentmetode",
+   "fieldtype": "Data",
+   "label": "Metode Pembayaran",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_detail",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Diisi untuk baris pengeluaranuang yang berupa pembayaran ke Supplier - kosong berarti setoran kas (Journal Entry Contra).",
+   "fieldname": "namasupplier",
+   "fieldtype": "Data",
+   "label": "Nama Supplier",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kodeaccount",
+   "fieldtype": "Data",
+   "label": "Kode Account",
+   "read_only": 1
+  },
+  {
+   "fieldname": "keterangan",
+   "fieldtype": "Small Text",
+   "label": "Keterangan",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_raw",
+   "fieldtype": "Section Break",
+   "label": "Data Mentah (JSON, persis dari API)"
+  },
+  {
+   "default": "JSON",
+   "fieldname": "raw_data_view",
+   "fieldtype": "Select",
+   "label": "Tampilan",
+   "no_copy": 1,
+   "options": "JSON\nTabel"
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view != \"Tabel\"",
+   "fieldname": "raw_data",
+   "fieldtype": "Code",
+   "label": "Raw Data",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view == \"Tabel\"",
+   "fieldname": "raw_data_table",
+   "fieldtype": "HTML",
+   "label": "Raw Data (Tabel)"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-09 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz Receipt Detail",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

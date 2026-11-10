@@ -29,6 +29,7 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	log_failed_sync,
+	log_receipt_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
 	set_period_fields,
@@ -80,6 +81,10 @@ def sync_penerimaan() -> dict:
 			nomor = clean(row.get("nomor"))
 			if not nomor:
 				continue
+			# Raw archive, independent of whatever happens below - see
+			# log_receipt_detail_row()'s docstring in common.py.
+			log_receipt_detail_row("penerimaanuang", row)
+			frappe.db.commit()
 			try:
 				was_created = _sync_one_receipt(nomor, row)
 				created += was_created
@@ -175,7 +180,6 @@ def _create_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
-	pe.custom_otobitz_endpoint = "penerimaanuang"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:

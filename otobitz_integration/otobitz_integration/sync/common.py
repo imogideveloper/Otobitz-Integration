@@ -441,7 +441,7 @@ def create_purchase_order(
 	return po.name
 
 
-def log_so_detail_rows(rows: list[dict]) -> int:
+def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnondecrypt") -> int:
 	"""Archive every raw `otoxpertsoandpart` line item into `OtoBitz SO Detail`,
 	one row in, one row out - no grouping by `nomorwo`, no dependency on
 	whether the matching Sales Order/Invoice was actually created.
@@ -466,6 +466,7 @@ def log_so_detail_rows(rows: list[dict]) -> int:
 			continue
 		dedup_key = f"{nomorwo}|{kodereferensi}"
 		values = {
+			"endpoint": endpoint,
 			"nomorwo": nomorwo,
 			"nofaktur": clean(row.get("nofaktur")),
 			"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
@@ -494,6 +495,74 @@ def log_so_detail_rows(rows: list[dict]) -> int:
 		except Exception:
 			frappe.log_error(title=f"OtoBitz sync: failed to archive SO Detail row {dedup_key}")
 	return logged
+
+
+def log_receipt_detail_row(endpoint: str, row: dict) -> bool:
+	"""Archive a raw penerimaanuang/pengeluaranuang row into
+	`OtoBitz Receipt Detail`, independent of whether the Payment Entry/
+	Journal Entry built from it actually got created - same philosophy as
+	log_so_detail_rows() above. Dedup/upsert key is `endpoint|nomor` (OtoBitz
+	never reuses a receipt number across these two endpoints)."""
+	import json
+
+	nomor = clean(row.get("nomor"))
+	if not nomor:
+		return False
+	dedup_key = f"{endpoint}|{nomor}"
+	values = {
+		"endpoint": endpoint,
+		"nomor": nomor,
+		"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
+		"status": clean(row.get("status")),
+		"kode_cabang": clean(row.get("kode_cabang")),
+		"namacabang": clean(row.get("namacabang")),
+		"nilai": flt(row.get("nilaipenerimaan") or row.get("nilaipembayaran")),
+		"noreferensi": clean(row.get("noreferensi")),
+		"paymentmetode": clean(row.get("paymentmetode")),
+		"namasupplier": clean(row.get("namasupplier")),
+		"kodeaccount": clean(row.get("kodeaccount")),
+		"keterangan": clean(row.get("keterangan")) or clean(row.get("memo")),
+		"raw_data": json.dumps(row, default=str, ensure_ascii=False),
+	}
+	values = {k: v for k, v in values.items() if v is not None}
+	try:
+		upsert("OtoBitz Receipt Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+		return True
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to archive Receipt Detail row {dedup_key}")
+		return False
+
+
+def log_po_detail_row(endpoint: str, nomor: str, row: dict) -> bool:
+	"""Archive a raw masterdata_orderparts/masterdata_orderpekerjaanluar
+	order into `OtoBitz PO Detail`, one row per order - unlike
+	log_so_detail_rows() this is already keyed 1:1 with the Purchase Order
+	it builds (sync_orderparts.py/sync_orderpekerjaanluar.py never group
+	rows by anything), independent of whether that Purchase Order actually
+	gets created. Dedup/upsert key is `endpoint|nomor`."""
+	import json
+
+	if not nomor:
+		return False
+	dedup_key = f"{endpoint}|{nomor}"
+	detail = row.get("detail") or []
+	values = {
+		"endpoint": endpoint,
+		"nomor": nomor,
+		"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
+		"kode_cabang": clean(row.get("kodecabang")),
+		"kodesupplier": clean(row.get("kodesupplier")),
+		"nomor_so": clean(row.get("nomor_so")),
+		"item_count": len(detail),
+		"raw_data": json.dumps(row, default=str, ensure_ascii=False),
+	}
+	values = {k: v for k, v in values.items() if v is not None}
+	try:
+		upsert("OtoBitz PO Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+		return True
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to archive PO Detail row {dedup_key}")
+		return False
 
 
 def get_or_create_uom(uom_name: str | None) -> str:

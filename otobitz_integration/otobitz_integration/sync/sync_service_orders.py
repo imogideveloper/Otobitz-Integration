@@ -96,18 +96,70 @@ def _iter_date_chunks(start: str, end: str):
 		chunk_start = add_days(chunk_end, 1)
 
 
+def _get_so_sync_config() -> tuple[str, str | None, bool]:
+	"""(primary_endpoint, fallback_endpoint_or_None, auto_fallback) straight
+	from OtoBitz Settings - see that doctype's "Konfigurasi Endpoint SO"
+	section. Lets ops switch which endpoint sync_service_orders() hits (or
+	turn on/off the automatic fallback) from the Desk, no code change or
+	restart needed, for exactly the scenario that forced the
+	otoxpertsoandpart -> otoxpertsoandpartnondecrypt switch in the first
+	place (the live endpoint going down/timing out under load)."""
+	settings = frappe.get_single("OtoBitz Settings")
+	primary = settings.so_sync_endpoint or "otoxpertsoandpartnondecrypt"
+	fallback = settings.so_sync_fallback_endpoint or None
+	auto_fallback = bool(settings.so_sync_auto_fallback)
+	if fallback == primary:
+		fallback = None
+	return primary, fallback, auto_fallback
+
+
+def _needs_customer_lookup(endpoint: str) -> bool:
+	"""Only a *nondecrypt* endpoint returns customer PII scrambled -
+	otoxpertsoandpart and otoxpertsoandpartpernomor both already return real
+	values directly, so resolving them again via datacustomerbynumber would
+	just be a wasted API call (worse: a lookup failure would silently
+	overwrite nothing since _decrypted_header() is skipped outright)."""
+	return "nondecrypt" in endpoint
+
+
 def sync_service_orders() -> dict:
 	tanggalawal, tanggalakhir = get_sync_window()
+	primary_endpoint, fallback_endpoint, auto_fallback = _get_so_sync_config()
+
+	# One entry per OtoBitz customerid actually seen in this run, so a
+	# customer shared across many Work Orders (the common case) only costs
+	# one datacustomerbynumber call, not one per line item / per WO - see
+	# _resolve_customer_info()'s own docstring for why this call exists at
+	# all (otoxpertsoandpartnondecrypt returns nama/alamat/nohp/email/nik
+	# scrambled; this is how the real values get recovered).
+	customer_cache: dict = {}
 
 	fetched = created = updated = failed = archived = 0
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
 		renew_sync_lock()
+		endpoint_used = primary_endpoint
 		try:
-			response = call_api("otoxpertsoandpart", {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
+			response = call_api(primary_endpoint, {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
 		except OtoBitzAPIError:
-			frappe.log_error(title=f"OtoBitz sync: giving up on otoxpertsoandpart {chunk_start}..{chunk_end}")
-			failed += 1
-			continue
+			if not (auto_fallback and fallback_endpoint):
+				frappe.log_error(title=f"OtoBitz sync: giving up on {primary_endpoint} {chunk_start}..{chunk_end}")
+				failed += 1
+				continue
+			frappe.log_error(
+				title=f"OtoBitz sync: {primary_endpoint} down, falling back to {fallback_endpoint} for {chunk_start}..{chunk_end}"
+			)
+			try:
+				response = call_api(fallback_endpoint, {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
+				endpoint_used = fallback_endpoint
+			except OtoBitzAPIError:
+				frappe.log_error(
+					title=(
+						f"OtoBitz sync: giving up on both {primary_endpoint} and {fallback_endpoint} "
+						f"{chunk_start}..{chunk_end}"
+					)
+				)
+				failed += 1
+				continue
 
 		rows = response.get("data-so") or []
 		fetched += len(rows)
@@ -116,7 +168,7 @@ def sync_service_orders() -> dict:
 		# OtoBitz sent gets a row in OtoBitz SO Detail exactly as received, even
 		# one whose Work Order later gets skipped/cancelled/fails to sync as a
 		# real Sales Order - see log_so_detail_rows()'s docstring in common.py.
-		archived += log_so_detail_rows(rows)
+		archived += log_so_detail_rows(rows, endpoint=endpoint_used)
 		frappe.db.commit()
 
 		groups = defaultdict(list)
@@ -125,11 +177,12 @@ def sync_service_orders() -> dict:
 			if nomorwo:
 				groups[nomorwo].append(row)
 
+		needs_lookup = _needs_customer_lookup(endpoint_used)
 		for i, (nomorwo, wo_rows) in enumerate(groups.items()):
 			if i % 20 == 0:
 				renew_sync_lock()
 			try:
-				was_created = _sync_one_wo(nomorwo, wo_rows)
+				was_created = _sync_one_wo(nomorwo, wo_rows, customer_cache, endpoint_used, needs_lookup)
 				created += was_created
 				updated += not was_created
 				# Commit after every single WO, not per-chunk or at the very
@@ -154,7 +207,7 @@ def sync_service_orders() -> dict:
 				failed += 1
 
 		frappe.logger("otobitz_integration").info(
-			f"otoxpertsoandpart {chunk_start}..{chunk_end}: {len(rows)} rows, {len(groups)} Work Orders"
+			f"{endpoint_used} {chunk_start}..{chunk_end}: {len(rows)} rows, {len(groups)} Work Orders"
 		)
 
 	frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
@@ -163,9 +216,21 @@ def sync_service_orders() -> dict:
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed, "archived": archived}
 
 
-def _sync_one_wo(nomorwo: str, wo_rows: list) -> bool:
+def _sync_one_wo(
+	nomorwo: str,
+	wo_rows: list,
+	customer_cache: dict | None = None,
+	endpoint_name: str = "otoxpertsoandpartnondecrypt",
+	needs_customer_lookup: bool | None = None,
+) -> bool:
 	"""Returns True if a new Sales Order was created for this WO (False if it
-	already existed / only the Sales Invoice step ran)."""
+	already existed / only the Sales Invoice step ran). `endpoint_name` only
+	decides `needs_customer_lookup`'s default (_needs_customer_lookup(
+	endpoint_name) when not passed explicitly) - only a *nondecrypt*
+	endpoint's rows are worth running through _decrypted_header() at all."""
+	if needs_customer_lookup is None:
+		needs_customer_lookup = _needs_customer_lookup(endpoint_name)
+
 	header = wo_rows[0]
 	existing_so = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 
@@ -177,6 +242,8 @@ def _sync_one_wo(nomorwo: str, wo_rows: list) -> bool:
 	if existing_so:
 		created = False
 	else:
+		if needs_customer_lookup:
+			header = _decrypted_header(header, customer_cache if customer_cache is not None else {})
 		existing_so = _create_sales_order(nomorwo, header, wo_rows)
 		created = True
 
@@ -198,6 +265,64 @@ def _cancel_wo_documents(so_name: str) -> None:
 	so = frappe.get_doc("Sales Order", so_name)
 	if so.docstatus == 1:
 		so.cancel()
+
+
+def _resolve_customer_info(customerid: str, cache: dict) -> dict | None:
+	"""The real (decrypted) nama/alamat/nohp/email/nik for one OtoBitz
+	customer, via `datacustomerbynumber` - `otoxpertsoandpartnondecrypt`
+	returns those same fields scrambled on every row (confirmed live: e.g.
+	nama "0eVwYTg GEYEs9wW xvtK0V5" instead of the real name), apparently a
+	Thales-side decrypt step that stops returning usable data once too many
+	rows are requested in one call to the plain `otoxpertsoandpart` endpoint
+	- this is the suggested workaround: fetch undecrypted, then resolve each
+	customer's real details individually here.
+
+	Cached per customerid (passed in from sync_service_orders(), one dict for
+	the whole run) since the same customer repeats across many Work Orders -
+	calling this once per *row* would just recreate the "too much at once"
+	problem one call at a time instead of one request.
+
+	Returns None (not a throw) on a lookup miss/failure: _decrypted_header()
+	falls back to the WO row's own (scrambled) fields rather than failing
+	the whole Work Order over one customer lookup."""
+	if customerid in cache:
+		return cache[customerid]
+
+	lookup_endpoint = frappe.db.get_single_value("OtoBitz Settings", "customer_lookup_endpoint") or "datacustomerbynumber"
+
+	info = None
+	try:
+		response = call_api(lookup_endpoint, {"nomor": customerid})
+		rows = response.get("data-customer") or []
+		if rows:
+			info = rows[0]
+	except OtoBitzAPIError:
+		frappe.log_error(title=f"OtoBitz sync: {lookup_endpoint} failed for customerid {customerid}")
+
+	cache[customerid] = info
+	return info
+
+
+def _decrypted_header(header: dict, cache: dict) -> dict:
+	"""header with nama/alamat/nohp/email/nik replaced by the real values
+	from `datacustomerbynumber`, if a lookup for this customerid succeeds -
+	see _resolve_customer_info()'s docstring. Returns the original header
+	unchanged (still scrambled) when there's no customerid to look up with,
+	or the lookup itself comes back empty."""
+	customerid = clean(header.get("customerid"))
+	if not customerid:
+		return header
+
+	info = _resolve_customer_info(customerid, cache)
+	if not info:
+		return header
+
+	decrypted = dict(header)
+	for field in ("nama", "alamat", "nohp", "email", "nik", "npwp"):
+		value = info.get(field)
+		if value:
+			decrypted[field] = value
+	return decrypted
 
 
 def _resolve_customer(header: dict) -> str | None:
@@ -490,7 +615,7 @@ def lookup_and_sync_wo(nomorwo: str) -> dict:
 	if not rows:
 		return {"found": False, "nomorwo": nomorwo}
 
-	was_created = _sync_one_wo(nomorwo, rows)
+	was_created = _sync_one_wo(nomorwo, rows, {}, "otoxpertsoandpartpernomor")
 	frappe.db.commit()
 
 	return {
@@ -906,3 +1031,57 @@ def backfill_sales_invoice_payment_reference_and_dates() -> dict:
 
 	frappe.db.commit()
 	return {"checked": checked, "fixed": fixed}
+
+
+@frappe.whitelist()
+def backfill_customer_names() -> dict:
+	"""One-off/repeatable: _resolve_customer() only ever runs once per
+	Customer (at their first Work Order's sync) - a Customer whose
+	datacustomerbynumber lookup failed at that exact moment (client.py had
+	zero retries for OtoBitz's "Too Many Requests" response until this was
+	fixed - confirmed from Error Log: ~70% of lookups were failing this way)
+	is stuck with otoxpertsoandpartnondecrypt's scrambled nama/npwp forever,
+	since nothing ever re-resolves an already-existing Customer.
+
+	Re-resolves every OtoBitz-sourced Customer against datacustomerbynumber
+	again (now with the retry-with-backoff fix) and updates customer_name/
+	tax_id only when the lookup succeeds and the value actually changed -
+	safe to re-run anytime; a Customer whose name is already correct just
+	costs one no-op lookup. Can take a while for a large customer base (one
+	API call each, no bulk variant of this endpoint) - re-run it again later
+	for whatever didn't get through this time, same as any other backfill
+	here."""
+	frappe.only_for("System Manager")
+	import time
+
+	customers = frappe.get_all(
+		"Customer",
+		filters={"custom_otobitz_customer_id": ["is", "set"]},
+		fields=["name", "customer_name", "tax_id", "custom_otobitz_customer_id"],
+	)
+	cache: dict = {}
+	checked = fixed = failed = 0
+	for i, cust in enumerate(customers):
+		if i % 20 == 0:
+			renew_sync_lock()
+		checked += 1
+		info = _resolve_customer_info(cust.custom_otobitz_customer_id, cache)
+		if not info:
+			failed += 1
+			continue
+
+		updates = {}
+		real_name = safe_name(info.get("nama"))
+		if real_name and real_name != cust.customer_name:
+			updates["customer_name"] = real_name
+		real_npwp = clean_or_none(info.get("npwp"))
+		if real_npwp and real_npwp != cust.tax_id:
+			updates["tax_id"] = real_npwp
+
+		if updates:
+			frappe.db.set_value("Customer", cust.name, updates, update_modified=False)
+			fixed += 1
+		frappe.db.commit()
+		time.sleep(0.2)
+
+	return {"checked": checked, "fixed": fixed, "failed": failed}

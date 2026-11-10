@@ -21,6 +21,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	create_purchase_order,
 	log_failed_sync,
+	log_po_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
 )
@@ -71,6 +72,10 @@ def sync_orderparts() -> dict:
 			nomor = clean(row.get("nomor"))
 			if not nomor:
 				continue
+			# Raw archive, independent of whatever happens below - see
+			# log_po_detail_row()'s docstring in common.py.
+			log_po_detail_row("masterdata_orderparts", nomor, row)
+			frappe.db.commit()
 			try:
 				was_created = _sync_one_order(nomor, row)
 				created += was_created

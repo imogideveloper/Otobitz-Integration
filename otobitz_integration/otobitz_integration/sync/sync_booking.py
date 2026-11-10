@@ -134,7 +134,6 @@ def _create_advance_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
-	pe.custom_otobitz_endpoint = "penerimaanuangmukabooking"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:

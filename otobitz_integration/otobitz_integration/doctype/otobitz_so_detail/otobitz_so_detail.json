@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "dedup_key",
+  "endpoint",
   "section_break_wo",
   "nomorwo",
   "nofaktur",
@@ -34,7 +35,9 @@
   "nilaipenerimaan",
   "sisapiutang",
   "section_break_raw",
-  "raw_data"
+  "raw_data_view",
+  "raw_data",
+  "raw_data_table"
  ],
  "fields": [
   {
@@ -44,6 +47,15 @@
    "label": "Dedup Key",
    "read_only": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "endpoint",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Endpoint",
+   "options": "otoxpertsoandpart\notoxpertsoandpartnondecrypt",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_wo",
@@ -207,11 +219,26 @@
    "label": "Data Mentah (JSON, persis dari API)"
   },
   {
+   "default": "JSON",
+   "fieldname": "raw_data_view",
+   "fieldtype": "Select",
+   "label": "Tampilan",
+   "no_copy": 1,
+   "options": "JSON\nTabel"
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view != \"Tabel\"",
    "fieldname": "raw_data",
    "fieldtype": "Code",
    "label": "Raw Data",
    "options": "JSON",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view == \"Tabel\"",
+   "fieldname": "raw_data_table",
+   "fieldtype": "HTML",
+   "label": "Raw Data (Tabel)"
   }
  ],
  "index_web_pages_for_search": 0,
