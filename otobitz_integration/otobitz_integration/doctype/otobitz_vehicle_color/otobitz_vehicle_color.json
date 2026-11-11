@@ -45,11 +45,14 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-29 00:00:00.000000",
+ "modified": "2026-11-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "OtoBitz Vehicle Color",
  "owner": "Administrator",
+ "search_fields": "nama",
+ "show_title_field_in_link": 1,
+ "title_field": "nama",
  "permissions": [
   {
    "create": 1,

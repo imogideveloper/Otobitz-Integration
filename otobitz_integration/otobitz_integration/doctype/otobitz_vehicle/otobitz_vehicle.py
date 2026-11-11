@@ -65,11 +65,14 @@ def change_owner(vehicle, customer, date=None, note=None, source="Manual"):
 	doc.flags.owner_note = note
 	doc.customer = customer
 	doc.save()
-	return doc.customer
+	return {
+		"new_owner": doc.customer,
+		"new_owner_name": frappe.db.get_value("Customer", doc.customer, "customer_name"),
+	}
 
 
 @frappe.whitelist()
-def search_vehicle(doctype, txt, searchfield, start, page_len, filters):
+def search_vehicle(doctype, txt, searchfield, start: int, page_len: int, filters):
 	txt = f"%{txt}%"
 	conditions = []
 	values = [txt, txt, txt, txt]
@@ -106,3 +109,36 @@ def search_vehicle(doctype, txt, searchfield, start, page_len, filters):
 		""",
 		tuple(values),
 	)
+
+
+@frappe.whitelist()
+def create_vehicle(
+	norangka,
+	customer,
+	nopolisi=None,
+	nomesin=None,
+	vehicle_type=None,
+	vehicle_color=None,
+	tahunpembuatan=None,
+	last_odometer=None,
+):
+	if frappe.session.user == "Guest":
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+
+	if frappe.db.exists("OtoBitz Vehicle", norangka):
+		frappe.throw(frappe._("A vehicle with chassis number {0} already exists").format(norangka))
+
+	doc = frappe.get_doc({
+		"doctype": "OtoBitz Vehicle",
+		"norangka": norangka,
+		"nopolisi": nopolisi,
+		"nomesin": nomesin,
+		"customer": customer,
+		"vehicle_type": vehicle_type,
+		"vehicle_color": vehicle_color,
+		"tahunpembuatan": tahunpembuatan,
+		"last_odometer": last_odometer,
+	})
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"name": doc.name, "nopolisi": doc.nopolisi}
