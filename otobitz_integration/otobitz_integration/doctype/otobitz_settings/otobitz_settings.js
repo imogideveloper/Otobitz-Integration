@@ -29,7 +29,82 @@ frappe.ui.form.on("OtoBitz Settings", {
 	refresh(frm) {
 		frm.call("get_dashboard_summary").then((r) => r.message && render_otobitz_dashboard(frm, r.message));
 
-		frm.add_custom_button(__("Sync Now"), () => frm.call("sync_now").then(() => frm.reload_doc()));
+		// Sync Now / Sync Ulang dari Tanggal / Benerin Nama Customer are all
+		// enqueued server-side now (see otobitz_settings.py's docstrings) -
+		// never run them synchronously in-request, even in developer_mode:
+		// confirmed live that a sync spanning several endpoints/days can
+		// outlast gunicorn's 120s worker timeout, which SIGKILLs the
+		// worker mid-sync with zero progress saved and nothing useful
+		// shown in the browser (just a silently-reset request). The call
+		// here only enqueues, so it returns almost instantly - no freeze
+		// needed, and there's no inline result to show, just a "queued"
+		// toast. Progress is visible in the OtoBitz Sync Log list / the
+		// Ringkasan OtoBitz counts above after a refresh.
+		frm.add_custom_button(__("Sync Now"), () => {
+			frm.call("sync_now").then(() => frappe.show_alert({ message: __("Sync sudah diantrikan."), indicator: "green" }));
+		});
+
+		frm.add_custom_button(__("Benerin Nama Customer"), () => {
+			frappe.confirm(
+				__(
+					"Cek ulang semua nama Customer yang masih acak (gagal didekripsi) ke OtoBitz, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Bisa makan waktu agak lama di background."
+				),
+				() => {
+					frm.call("fix_customer_names").then(() =>
+						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log / Error Log beberapa saat lagi."), indicator: "green" }, 7)
+					);
+				}
+			);
+		});
+
+		frm.add_custom_button(__("Benerin Nama Customer per Tanggal"), () => {
+			if (!frm.doc.fix_customer_names_from_date) {
+				frappe.msgprint(__("Pilih tanggal dulu di field \"Dari Tanggal\" (bagian Benerin Nama Customer)."));
+				return;
+			}
+			const from_label = frappe.datetime.str_to_user(frm.doc.fix_customer_names_from_date);
+			const range_label = !frm.doc.fix_customer_names_to_date || frm.doc.fix_customer_names_to_date === frm.doc.fix_customer_names_from_date
+				? __("persis tanggal {0}", [from_label])
+				: __("dari tanggal {0} sampai {1}", [from_label, frappe.datetime.str_to_user(frm.doc.fix_customer_names_to_date)]);
+			frappe.confirm(
+				__(
+					"Cek ulang nama Customer buat yang transaksi {0}, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Jalan di background.",
+					[range_label]
+				),
+				() => {
+					frm.call("fix_customer_names_for_date").then(() =>
+						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log / Error Log beberapa saat lagi."), indicator: "green" }, 7)
+					);
+				}
+			);
+		});
+
+		frm.add_custom_button(__("Sync Ulang dari Tanggal"), () => {
+			if (!frm.doc.manual_sync_from_date) {
+				frappe.msgprint(__("Pilih tanggal dulu di field \"Sync Ulang dari Tanggal\"."));
+				return;
+			}
+			const from_label = frappe.datetime.str_to_user(frm.doc.manual_sync_from_date);
+			let range_label;
+			if (!frm.doc.manual_sync_to_date) {
+				range_label = __("dari tanggal {0} sampai hari ini", [from_label]);
+			} else if (frm.doc.manual_sync_to_date === frm.doc.manual_sync_from_date) {
+				range_label = __("persis tanggal {0} aja", [from_label]);
+			} else {
+				range_label = __("dari tanggal {0} sampai {1}", [from_label, frappe.datetime.str_to_user(frm.doc.manual_sync_to_date)]);
+			}
+			frappe.confirm(
+				__(
+					"Sinkronisasi ulang Sales Order, Payment Entry, Journal Entry, dan Purchase Order {0}? Jalan di background, bisa makan waktu beberapa menit.",
+					[range_label]
+				),
+				() => {
+					frm.call("sync_from_date").then(() =>
+						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log beberapa saat lagi."), indicator: "green" })
+					);
+				}
+			);
+		});
 
 		frm.add_custom_button(__("Look Up Work Order"), () => {
 			if (!frm.doc.lookup_wo_number) {

@@ -225,9 +225,14 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"hourly_long": [
-		"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_hourly_sync",
-	],
+	"cron": {
+		# checks every 15 min, but only actually triggers a sync once per
+		# hour listed in OtoBitz Settings' "Jam Sync" - see
+		# orchestrator.trigger_scheduled_sync()'s own docstring for why
+		"*/15 * * * *": [
+			"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_scheduled_sync",
+		],
+	},
 	"daily": [
 		"otobitz_integration.otobitz_integration.sync.reconciliation.daily_reconciliation_check",
 	],
