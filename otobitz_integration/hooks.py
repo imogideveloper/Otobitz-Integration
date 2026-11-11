@@ -38,7 +38,7 @@ app_include_css = [
 # would ever show a change, and a plain refresh could still serve the stale
 # cached copy. Bump the v=N for a file every time that file changes.
 app_include_js = [
-	"/assets/otobitz_integration/js/otobitz_navbar.js?v=16",
+	"/assets/otobitz_integration/js/otobitz_navbar.js?v=17",
 	"/assets/otobitz_integration/js/otobitz_group_by.js?v=12",
 	"/assets/otobitz_integration/js/otobitz_favorites.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_list_page_length.js?v=1",
@@ -171,7 +171,7 @@ after_app_install = "otobitz_integration.install.after_app_install"
 
 doc_events = {
 	"Customer": {
-		"before_insert": "otobitz_integration.customer.set_manual_customer_id",
+		"before_insert": "otobitz_integration.customer_id.assign_manual_customer_id",
 	},
 	"Sales Order": {
 		"before_insert": "otobitz_integration.sales_order.set_next_service_date",

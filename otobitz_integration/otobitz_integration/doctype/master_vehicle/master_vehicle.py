@@ -3,10 +3,68 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import getdate, nowdate
 
 
 class MasterVehicle(Document):
-	pass
+	def validate(self):
+		self.track_owner()
+
+	def track_owner(self):
+		"""Keep `owner_history` in step with `customer`, whatever changed it: the
+		"Ganti Pemilik" button, a Sales Order, the OtoBitz sync (sync/common.py
+		get_or_create_vehicle) or a plain edit. The row for the previous owner is
+		closed with today's date and a row for the new one is opened. Flags
+		`owner_source` / `owner_date` / `owner_note` are set by those callers;
+		without them the change counts as a manual one made today.
+		"""
+		before = self.get_doc_before_save()
+		old = before.customer if before else None
+		new = self.customer
+		if old == new and (self.owner_history or not new):
+			return
+
+		when = getdate(self.flags.get("owner_date") or nowdate())
+		open_rows = [r for r in self.owner_history if not r.to_date]
+		if old and old != new and not any(r.customer == old for r in self.owner_history):
+			# vehicle that predates the history: keep its previous owner on record
+			self.append("owner_history", {"customer": old, "source": "Sinkronisasi", "to_date": when})
+		for row in open_rows:
+			row.to_date = when
+		if new:
+			self.append(
+				"owner_history",
+				{
+					"customer": new,
+					"from_date": when,
+					"source": self.flags.get("owner_source") or frappe.flags.get("owner_source") or "Manual",
+					"changed_by": frappe.session.user,
+					"notes": self.flags.get("owner_note"),
+				},
+			)
+
+
+@frappe.whitelist()
+def change_owner(vehicle, customer, date=None, note=None, source="Manual"):
+	"""Change a vehicle's owner and record it in the owner history.
+
+	Used by the "Ganti Pemilik" button on the vehicle form and by the "Update
+	Data Pemilik" prompt on a Sales Order. The history row itself is written by
+	MasterVehicle.track_owner when the document saves."""
+	if source not in ("Manual", "Sales Order"):
+		source = "Manual"
+	if not customer or not frappe.db.exists("Customer", customer):
+		frappe.throw(frappe._("Customer {0} not found").format(customer))
+	doc = frappe.get_doc("Master Vehicle", vehicle)
+	doc.check_permission("write")
+	if doc.customer == customer:
+		frappe.throw(frappe._("{0} is already the owner of this vehicle").format(customer))
+	doc.flags.owner_source = source
+	doc.flags.owner_date = date
+	doc.flags.owner_note = note
+	doc.customer = customer
+	doc.save()
+	return {"new_owner": doc.customer, "new_owner_name": frappe.db.get_value("Customer", doc.customer, "customer_name")}
 
 
 @frappe.whitelist()
@@ -47,63 +105,6 @@ def search_vehicle(doctype, txt, searchfield, start: int, page_len: int, filters
 		""",
 		tuple(values),
 	)
-
-
-@frappe.whitelist()
-def get_owner_history(vehicle):
-	vehicle_doc = frappe.db.get_value(
-		"Master Vehicle", vehicle, ["customer"], as_dict=True
-	)
-	if not vehicle_doc:
-		frappe.throw(frappe._("Vehicle {0} not found").format(vehicle))
-
-	current = None
-	if vehicle_doc.customer:
-		current = frappe.db.get_value(
-			"Customer", vehicle_doc.customer, ["name", "customer_name", "mobile_no"], as_dict=True
-		)
-
-	rows = frappe.get_all(
-		"Master Vehicle Owner History",
-		filters={"vehicle": vehicle},
-		fields=["previous_owner", "previous_owner_phone", "owner", "creation"],
-		order_by="creation desc",
-	)
-	for row in rows:
-		row["previous_owner_name"] = frappe.db.get_value("Customer", row.previous_owner, "customer_name")
-		row["changed_by_name"] = frappe.db.get_value("User", row.owner, "full_name") or row.owner
-
-	return {"current": current, "history": rows}
-
-
-@frappe.whitelist()
-def update_vehicle_owner(vehicle, new_owner):
-	if frappe.session.user == "Guest":
-		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
-
-	current_owner = frappe.db.get_value("Master Vehicle", vehicle, "customer")
-	if not current_owner:
-		frappe.throw(frappe._("Vehicle {0} not found").format(vehicle))
-
-	if current_owner == new_owner:
-		frappe.throw(frappe._("{0} is already the owner of this vehicle").format(new_owner))
-
-	previous_owner_phone = frappe.db.get_value("Customer", current_owner, "mobile_no")
-
-	frappe.get_doc({
-		"doctype": "Master Vehicle Owner History",
-		"vehicle": vehicle,
-		"previous_owner": current_owner,
-		"previous_owner_phone": previous_owner_phone,
-	}).insert(ignore_permissions=True)
-
-	frappe.db.set_value("Master Vehicle", vehicle, "customer", new_owner)
-	frappe.db.commit()
-
-	return {
-		"new_owner": new_owner,
-		"new_owner_name": frappe.db.get_value("Customer", new_owner, "customer_name"),
-	}
 
 
 @frappe.whitelist()

@@ -57,6 +57,17 @@
    "dependencies": "",
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Master Vehicle",
+   "link_count": 0,
+   "link_to": "Master Vehicle",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "OtoBitz Vehicle Type",
    "link_count": 0,
    "link_to": "OtoBitz Vehicle Type",

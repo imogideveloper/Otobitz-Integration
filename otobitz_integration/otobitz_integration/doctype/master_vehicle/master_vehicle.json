@@ -24,7 +24,9 @@
   "vehicle_color_name",
   "column_break_spec",
   "tahunpembuatan",
-  "last_odometer"
+  "last_odometer",
+  "section_break_owner_history",
+  "owner_history"
  ],
  "fields": [
   {
@@ -162,11 +164,24 @@
    "fieldtype": "Int",
    "label": "Last Odometer",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_break_owner_history",
+   "fieldtype": "Section Break",
+   "label": "Riwayat Pemilik"
+  },
+  {
+   "fieldname": "owner_history",
+   "fieldtype": "Table",
+   "label": "Riwayat Pemilik",
+   "options": "Master Vehicle Owner",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-10 00:00:00.000000",
+ "modified": "2026-11-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "Master Vehicle",
@@ -186,6 +201,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "nopolisi,customer",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []
