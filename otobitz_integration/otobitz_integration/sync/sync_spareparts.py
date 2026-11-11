@@ -41,7 +41,9 @@ def sync_spareparts() -> dict:
 		values = {
 			"item_name": safe_name(row.get("namapart")) or item_code,
 			"item_group": item_group,
-			"stock_uom": get_or_create_uom(row.get("satuan")),
+			# Every item is "Units", like Odoo (all 14,146 Odoo products are "Units"; user, 2026-11-09).
+			# OtoBitz's own `satuan` is deliberately not used any more.
+			"stock_uom": get_or_create_uom("Units"),
 			"is_stock_item": 1,
 			"disabled": 0 if as_bool(row.get("aktif")) else 1,
 			"custom_otobitz_part_code": item_code,

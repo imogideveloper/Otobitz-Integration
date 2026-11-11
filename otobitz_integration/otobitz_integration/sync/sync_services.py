@@ -40,7 +40,7 @@ def sync_jasaservice() -> dict:
 		values = {
 			"item_name": safe_name(row.get("namajasa")) or item_code,
 			"item_group": item_group,
-			"stock_uom": get_or_create_uom("Nos"),
+			"stock_uom": get_or_create_uom("Units"),
 			"is_stock_item": 0,
 			"disabled": 0 if as_bool(row.get("aktif")) else 1,
 			"custom_otobitz_service_code": item_code,
@@ -79,7 +79,7 @@ def sync_pekerjaanluar() -> dict:
 		values = {
 			"item_name": safe_name(row.get("namaopl")) or item_code,
 			"item_group": item_group,
-			"stock_uom": get_or_create_uom("Nos"),
+			"stock_uom": get_or_create_uom("Units"),
 			"is_stock_item": 0,
 			"disabled": 0 if as_bool(row.get("aktif")) else 1,
 			"custom_otobitz_service_code": item_code,
