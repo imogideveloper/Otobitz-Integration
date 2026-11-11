@@ -32,35 +32,38 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Nomor Rangka",
-   "read_only": 1,
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1,
    "unique": 1
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "nopolisi",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Nomor Polisi",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "nomesin",
    "fieldtype": "Data",
    "label": "Nomor Mesin",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "customer",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Customer",
    "options": "Customer",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "section_break_spesifikasi",
@@ -68,35 +71,39 @@
    "label": "Spesifikasi Kendaraan"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "vehicle_type",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Vehicle Type",
    "options": "OtoBitz Vehicle Type",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "vehicle_color",
    "fieldtype": "Link",
    "label": "Vehicle Color",
    "options": "OtoBitz Vehicle Color",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "column_break_spec",
    "fieldtype": "Column Break"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "tahunpembuatan",
    "fieldtype": "Data",
    "label": "Tahun Pembuatan",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "last_odometer",
    "fieldtype": "Int",
    "label": "Last Odometer",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "section_break_owner_history",
@@ -114,11 +121,12 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-09 20:30:00.000000",
+ "modified": "2026-11-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "OtoBitz Vehicle",
  "owner": "Administrator",
+ "quick_entry": 1,
  "permissions": [
   {
    "create": 1,

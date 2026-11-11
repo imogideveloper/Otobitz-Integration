@@ -44,3 +44,28 @@ frappe.ui.form.on("OtoBitz Vehicle", {
 		});
 	},
 });
+
+// Custom Quick Entry layout: Frappe's default Quick Entry always stacks
+// fields one per row even though the doctype itself has Column Breaks -
+// this override (the same pattern ERPNext itself uses, e.g. ItemQuickEntryForm)
+// lays them out two per row instead, matching the reference design.
+frappe.ui.form.OtoBitzVehicleQuickEntryForm = class extends frappe.ui.form.QuickEntryForm {
+	render_dialog() {
+		this.mandatory = [
+			{fieldname: "nopolisi", fieldtype: "Data", label: __("Nomor Polisi")},
+			{fieldname: "col_br_1", fieldtype: "Column Break"},
+			{fieldname: "nomesin", fieldtype: "Data", label: __("Nomor Mesin")},
+			{fieldname: "norangka", fieldtype: "Data", label: __("Nomor Rangka (Chassis)"), reqd: 1},
+			{fieldname: "col_br_2", fieldtype: "Column Break"},
+			{fieldname: "last_odometer", fieldtype: "Int", label: __("Last Odometer")},
+			{fieldname: "sec_br_1", fieldtype: "Section Break"},
+			{fieldname: "vehicle_type", fieldtype: "Link", options: "OtoBitz Vehicle Type", label: __("Vehicle Type")},
+			{fieldname: "col_br_3", fieldtype: "Column Break"},
+			{fieldname: "vehicle_color", fieldtype: "Link", options: "OtoBitz Vehicle Color", label: __("Vehicle Color")},
+			{fieldname: "tahunpembuatan", fieldtype: "Data", label: __("Tahun Pembuatan")},
+			{fieldname: "col_br_4", fieldtype: "Column Break"},
+			{fieldname: "customer", fieldtype: "Link", options: "Customer", label: __("Customer"), reqd: 1},
+		];
+		super.render_dialog();
+	}
+};
