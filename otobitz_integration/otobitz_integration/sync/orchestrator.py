@@ -65,8 +65,64 @@ SYNC_STEPS = [
 ]
 
 
+def maybe_trigger_sync():
+	"""Scheduler entrypoint for hooks.py's scheduler_events["cron"] - ticks
+	every 15 minutes, but only actually calls trigger_hourly_sync() once per
+	hour listed in OtoBitz Settings.sync_hours (default "12,16,18,20" -
+	deliberately timed to people's break moments rather than continuous
+	polling, so sync is less likely to be running while someone is actively
+	using Desk/POS).
+
+	This indirection - a frequent, cheap cron tick that mostly does nothing,
+	gating the actual (expensive) sync - exists so *when* the sync runs is
+	editable from the OtoBitz Settings page at any time (a comma-separated
+	list of hours, or "*" for every hour - the original behaviour before
+	this setting existed) instead of baked into hooks.py, which would need a
+	code deploy to change. Tested locally against otoexpert.localhost before
+	shipping to production (2026-11-06)."""
+	settings = frappe.get_single("OtoBitz Settings")
+	if not settings.enabled:
+		return
+
+	sync_hours_raw = (settings.sync_hours or "").strip()
+	if not sync_hours_raw:
+		return
+
+	if sync_hours_raw == "*":
+		# Shorthand for "every hour" (back to the original behaviour before
+		# this setting existed) - without this, getting the same result
+		# means typing out all 24 hours by hand ("0,1,2,...,23").
+		configured_hours = set(range(24))
+	else:
+		try:
+			configured_hours = {int(h.strip()) for h in sync_hours_raw.split(",") if h.strip() != ""}
+		except ValueError:
+			frappe.log_error(title=f"OtoBitz sync: invalid Sync Hours setting {sync_hours_raw!r} - expected e.g. '12,16,18,20' or '*' for every hour")
+			return
+
+	if not configured_hours or not configured_hours.issubset(range(24)):
+		frappe.log_error(title=f"OtoBitz sync: Sync Hours setting {sync_hours_raw!r} has an hour outside 0-23")
+		return
+
+	now = frappe.utils.now_datetime()
+	if now.hour not in configured_hours:
+		return
+
+	# Dedup: the configured hour stays "current" for the full 60 minutes, and
+	# this function is checked every 15 minutes - without this, the same
+	# matching hour would trigger the sync up to 4 times instead of once.
+	this_slot = now.strftime("%Y-%m-%d %H")
+	if settings.last_scheduled_trigger_slot == this_slot:
+		return
+
+	frappe.db.set_single_value("OtoBitz Settings", "last_scheduled_trigger_slot", this_slot, update_modified=False)
+	frappe.db.commit()
+	trigger_hourly_sync()
+
+
 def trigger_hourly_sync():
-	"""Scheduler entrypoint for hooks.py's scheduler_events["hourly_long"].
+	"""Enqueues the actual sync run, called either by maybe_trigger_sync()
+	above (the normal scheduled path) or directly for a manual "Sync Now".
 
 	Enqueues run_hourly_sync with an explicit timeout instead of letting it
 	run directly under whatever default timeout Frappe's scheduler assigns

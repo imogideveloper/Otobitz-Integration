@@ -30,6 +30,10 @@
   "last_booking_sync_date",
   "last_orderparts_sync_date",
   "last_orderpekerjaanluar_sync_date",
+  "section_break_schedule",
+  "sync_hours",
+  "column_break_schedule",
+  "last_scheduled_trigger_slot",
   "section_break_lookup",
   "lookup_wo_number"
  ],
@@ -188,6 +192,30 @@
    "label": "Last Order Pekerjaan Luar Sync Date",
    "read_only": 1,
    "description": "Watermark for masterdata_orderpekerjaanluar's incremental date-window sync."
+  },
+  {
+   "fieldname": "section_break_schedule",
+   "fieldtype": "Section Break",
+   "label": "Jadwal Sync"
+  },
+  {
+   "default": "12,16,18,20",
+   "description": "Jam (0-23, WIB) kapan sync otomatis boleh jalan, pisahkan dengan koma - contoh: 12,16,18,20. Isi * untuk jalan tiap jam (seperti sebelumnya). Diperiksa tiap 15 menit, tapi cuma jalan sekali per jam yang cocok. Ubah di sini kapan saja, tidak perlu deploy kode.",
+   "fieldname": "sync_hours",
+   "fieldtype": "Data",
+   "label": "Jam Sync (pisah koma)",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "fieldname": "column_break_schedule",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Slot jam terakhir yang sudah memicu sync (format YYYY-MM-DD HH) - dipakai supaya satu jam yang cocok tidak memicu sync berkali-kali.",
+   "fieldname": "last_scheduled_trigger_slot",
+   "fieldtype": "Data",
+   "label": "Slot Terakhir Dipicu",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_lookup",

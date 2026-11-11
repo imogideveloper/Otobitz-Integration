@@ -124,8 +124,8 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
-	_create_payment_entry(nomor, row)
-	return True
+	pe_name = _create_payment_entry(nomor, row)
+	return bool(pe_name)
 
 
 def _resolve_sales_invoice(nofaktur: str) -> str | None:
@@ -152,17 +152,33 @@ def _resolve_sales_invoice(nofaktur: str) -> str | None:
 	return frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": so_detail[0][0]})
 
 
-def _create_payment_entry(nomor: str, row: dict) -> str:
+def _create_payment_entry(nomor: str, row: dict) -> str | None:
 	nofaktur = clean(row.get("noreferensi"))
 	si_name = nofaktur and _resolve_sales_invoice(nofaktur)
 	if not si_name:
 		frappe.throw(f"No Sales Invoice found for nofaktur {nofaktur!r} (receipt {nomor})")
 
+	amount = flt(row.get("nilaipenerimaan"))
+	if amount <= 0:
+		# Zero-amount rows exist for non-cash administrative entries from this
+		# same endpoint (e.g. "PENYELESAIAN PPH 23" tax-withholding
+		# settlements, keterangan-only) - no real money moved, so there's
+		# nothing to record; a no-op, not a failure.
+		return None
+
+	si_outstanding = flt(frappe.db.get_value("Sales Invoice", si_name, "outstanding_amount"))
+	if si_outstanding <= 0:
+		# The invoice is already fully settled - this row is a trivial
+		# residual/rounding receipt from OtoBitz's own side (seen as low as
+		# Rp 11) with nothing left to allocate against. Recording it would
+		# need a dedicated advance account (none configured on this Company),
+		# and it isn't real new money owed - skipped rather than guessed at.
+		return None
+
 	mode_of_payment = frappe.db.get_value(
 		"Mode of Payment", {"custom_otobitz_payment_code": clean(row.get("paymentmetode"))}
 	)
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(row.get("kode_cabang"))})
-	amount = flt(row.get("nilaipenerimaan"))
 
 	# Deliberately NOT passing party_amount=amount here: when nilaipenerimaan
 	# exceeds the invoice's real outstanding amount (cash rounding at the till

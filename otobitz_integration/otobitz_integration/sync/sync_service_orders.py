@@ -32,7 +32,7 @@ from collections import defaultdict
 import frappe
 from erpnext.controllers.accounts_controller import get_taxes_and_charges
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
+from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
@@ -46,6 +46,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	renew_sync_lock,
 	resolve_failed_sync,
 	safe_name,
+	sane_int,
 	set_period_fields,
 	sync_so_payment_status,
 	upsert,
@@ -247,12 +248,45 @@ def _sync_one_wo(
 		existing_so = _create_sales_order(nomorwo, header, wo_rows)
 		created = True
 
-	if (header.get("statuswo") or "").strip().upper() == "FAKTUR":
+	statuswo = (header.get("statuswo") or "").strip().upper()
+	if statuswo == "FAKTUR":
 		has_invoice = frappe.db.exists("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
 		if not has_invoice:
 			_create_sales_invoice(nomorwo, existing_so, header)
+	elif statuswo == "BATAL INVOICE":
+		_note_invoice_cancelled(existing_so, nomorwo, header)
 
 	return created
+
+
+def _note_invoice_cancelled(so_name: str, nomorwo: str, header: dict) -> None:
+	"""OtoBitz's own statuswo says this Work Order's invoice was voided
+	("BATAL INVOICE") - possibly pending a reissue under a new nofaktur (see
+	sync_penerimaan.py's _resolve_sales_invoice fallback, which already
+	handles that case on the payment side). There's no current invoice to
+	create here, but silently doing nothing leaves no trace that this WO was
+	even looked at - stamped as a comment on the Sales Order instead, so a
+	cancelled-and-not-yet-reissued invoice is visible directly on the record
+	rather than only inferable from an absence. Guarded so the same
+	cancellation doesn't get re-commented every sync cycle this WO's date
+	stays inside the rolling window."""
+	nofaktur = clean(header.get("nofaktur")) or nomorwo
+	marker = f"OtoBitz: invoice {nofaktur} berstatus BATAL INVOICE saat sync terakhir"
+	already_noted = frappe.db.exists(
+		"Comment",
+		{"reference_doctype": "Sales Order", "reference_name": so_name, "content": ["like", f"%{marker}%"]},
+	)
+	if already_noted:
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Comment",
+			"comment_type": "Info",
+			"reference_doctype": "Sales Order",
+			"reference_name": so_name,
+			"content": marker,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _cancel_wo_documents(so_name: str) -> None:
@@ -464,8 +498,8 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	# OtoBitz Vehicle's last_odometer (see get_or_create_vehicle()'s own
 	# comment), guarded the same way rather than crashing the whole WO sync
 	# over one cosmetic field.
-	odometer = cint(header.get("odemeter"))
-	if 0 < odometer <= 9_999_999:
+	odometer = sane_int(header.get("odemeter"), min_value=1, max_value=2_000_000)
+	if odometer:
 		so.custom_odometer = odometer
 
 	sales_item_tax_template = (
@@ -475,7 +509,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		item_code = clean(row.get("kodereferensi"))
 		if not item_code or not frappe.db.exists("Item", item_code):
 			continue
-		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Units"
 		# `harga` is the gross per-unit price and `discperitem` a per-unit
 		# discount - OtoBitz's own `subtotal` = qty * (harga - discperitem),
 		# confirmed against a real WO. `price_list_rate` must be set to the
