@@ -122,8 +122,8 @@ def _needs_customer_lookup(endpoint: str) -> bool:
 	return "nondecrypt" in endpoint
 
 
-def sync_service_orders() -> dict:
-	tanggalawal, tanggalakhir = get_sync_window()
+def sync_service_orders(date_range: tuple[str, str] | None = None) -> dict:
+	tanggalawal, tanggalakhir = date_range or get_sync_window()
 	primary_endpoint, fallback_endpoint, auto_fallback = _get_so_sync_config()
 
 	# One entry per OtoBitz customerid actually seen in this run, so a
@@ -210,7 +210,8 @@ def sync_service_orders() -> dict:
 			f"{endpoint_used} {chunk_start}..{chunk_end}: {len(rows)} rows, {len(groups)} Work Orders"
 		)
 
-	frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
+	if date_range is None:
+		frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed, "archived": archived}
@@ -420,7 +421,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		# correct data from sync all along but sat hidden on the form
 		# (see the custom_plat_nomor Property Setter removed alongside this).
 		so.custom_otobitz_vehicle = vehicle
-	# These mirror OtoBitz Vehicle's own fields and are declared as
+	# These mirror Master Vehicle's own fields and are declared as
 	# fetch_from=custom_otobitz_vehicle.<field> on the Sales Order doctype,
 	# but Frappe's fetch_from only auto-populates when the link field is
 	# changed interactively in the browser - it's a no-op on a doc built and
@@ -461,7 +462,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		so.customer_address = address
 		so.shipping_address_name = address
 	# custom_odometer is an Int field too - same garbage-value overflow as
-	# OtoBitz Vehicle's last_odometer (see get_or_create_vehicle()'s own
+	# Master Vehicle's last_odometer (see get_or_create_vehicle()'s own
 	# comment), guarded the same way rather than crashing the whole WO sync
 	# over one cosmetic field.
 	odometer = cint(header.get("odemeter"))
@@ -861,7 +862,7 @@ def backfill_so_vehicle_and_contact_fields() -> dict:
 		fields=["name", "custom_otobitz_vehicle"],
 	):
 		vehicle_type, vehicle_color = frappe.db.get_value(
-			"OtoBitz Vehicle", so.custom_otobitz_vehicle, ["vehicle_type", "vehicle_color"]
+			"Master Vehicle", so.custom_otobitz_vehicle, ["vehicle_type", "vehicle_color"]
 		) or (None, None)
 		vehicle_type_info = (
 			frappe.db.get_value("OtoBitz Vehicle Type", vehicle_type, ["nama", "transmisi", "brand"], as_dict=True)
@@ -1034,7 +1035,7 @@ def backfill_sales_invoice_payment_reference_and_dates() -> dict:
 
 
 @frappe.whitelist()
-def backfill_customer_names() -> dict:
+def backfill_customer_names(only_suspicious: int = 1) -> dict:
 	"""One-off/repeatable: _resolve_customer() only ever runs once per
 	Customer (at their first Work Order's sync) - a Customer whose
 	datacustomerbynumber lookup failed at that exact moment (client.py had
@@ -1050,15 +1051,46 @@ def backfill_customer_names() -> dict:
 	costs one no-op lookup. Can take a while for a large customer base (one
 	API call each, no bulk variant of this endpoint) - re-run it again later
 	for whatever didn't get through this time, same as any other backfill
-	here."""
+	here.
+
+	only_suspicious (default on) skips straight to the customers actually
+	worth re-checking instead of paying for one API call per OtoBitz
+	customer regardless of whether anything is wrong: every scrambled name
+	seen in practice ("x0WPqvFcy 3lsAaA4I", "0eVwYTg GEYEs9wW xvtK0V5") has a
+	digit embedded in what should be a plain name, which a real Indonesian
+	person/company name essentially never does - so `customer_name regexp
+	'[0-9]'` finds the handful actually broken instead of re-querying all
+	~970+ of them. Pass 0 for a full sweep (e.g. if a name is scrambled in a
+	way that happens to have no digit in it, this heuristic would miss it).
+
+	Also propagates the corrected customer_name onto every Sales Order/
+	Sales Invoice that still has the stale (scrambled) value cached on the
+	document itself - fixing the Customer master alone doesn't touch
+	already-created transactions, since customer_name there is its own
+	stored field (set once at creation, never re-fetched for an existing
+	document), not a live lookup. This is why "Customer" kept showing
+	scrambled names in the Sales Order list even right after a Customer's
+	name was corrected."""
 	frappe.only_for("System Manager")
 	import time
 
-	customers = frappe.get_all(
-		"Customer",
-		filters={"custom_otobitz_customer_id": ["is", "set"]},
-		fields=["name", "customer_name", "tax_id", "custom_otobitz_customer_id"],
-	)
+	if int(only_suspicious):
+		customers = frappe.db.sql(
+			"""
+			select name, customer_name, tax_id, custom_otobitz_customer_id
+			from `tabCustomer`
+			where custom_otobitz_customer_id is not null
+				and custom_otobitz_customer_id != ''
+				and customer_name regexp '[0-9]'
+			""",
+			as_dict=True,
+		)
+	else:
+		customers = frappe.get_all(
+			"Customer",
+			filters={"custom_otobitz_customer_id": ["is", "set"]},
+			fields=["name", "customer_name", "tax_id", "custom_otobitz_customer_id"],
+		)
 	cache: dict = {}
 	checked = fixed = failed = 0
 	for i, cust in enumerate(customers):
@@ -1083,5 +1115,109 @@ def backfill_customer_names() -> dict:
 			fixed += 1
 		frappe.db.commit()
 		time.sleep(0.2)
+
+	so_propagated = frappe.db.sql(
+		"""select count(*) from `tabSales Order` so join `tabCustomer` c on c.name = so.customer
+		where so.customer_name != c.customer_name"""
+	)[0][0]
+	si_propagated = frappe.db.sql(
+		"""select count(*) from `tabSales Invoice` si join `tabCustomer` c on c.name = si.customer
+		where si.customer_name != c.customer_name"""
+	)[0][0]
+	frappe.db.sql(
+		"""update `tabSales Order` so
+		join `tabCustomer` c on c.name = so.customer
+		set so.customer_name = c.customer_name
+		where so.customer_name != c.customer_name"""
+	)
+	frappe.db.sql(
+		"""update `tabSales Invoice` si
+		join `tabCustomer` c on c.name = si.customer
+		set si.customer_name = c.customer_name
+		where si.customer_name != c.customer_name"""
+	)
+	frappe.db.commit()
+
+	return {
+		"checked": checked,
+		"fixed": fixed,
+		"failed": failed,
+		"so_names_propagated": so_propagated,
+		"si_names_propagated": si_propagated,
+	}
+
+
+@frappe.whitelist()
+def backfill_customer_names_for_dates(from_date, to_date=None) -> dict:
+	"""Same fix as backfill_customer_names(), scoped to exactly the
+	customers who actually appear on a Sales Order/Sales Invoice within
+	[from_date, to_date] - for an admin who already knows a specific day
+	had a problem (noticed in the Desk, e.g. "tanggal 7") and wants it
+	fixed right now instead of waiting on the only_suspicious heuristic or
+	a full sweep of every OtoBitz customer. Still only costs one API call
+	per distinct customer in that window, same as the broader backfill."""
+	frappe.only_for("System Manager")
+	import time
+
+	to_date = to_date or from_date
+	customers = frappe.db.sql(
+		"""
+		select distinct c.name, c.customer_name, c.tax_id, c.custom_otobitz_customer_id
+		from `tabCustomer` c
+		where c.custom_otobitz_customer_id is not null
+			and c.custom_otobitz_customer_id != ''
+			and (
+				exists (
+					select 1 from `tabSales Order` so
+					where so.customer = c.name and so.transaction_date between %(from_date)s and %(to_date)s
+				)
+				or exists (
+					select 1 from `tabSales Invoice` si
+					where si.customer = c.name and si.posting_date between %(from_date)s and %(to_date)s
+				)
+			)
+		""",
+		{"from_date": from_date, "to_date": to_date},
+		as_dict=True,
+	)
+
+	cache: dict = {}
+	checked = fixed = failed = 0
+	for i, cust in enumerate(customers):
+		if i % 20 == 0:
+			renew_sync_lock()
+		checked += 1
+		info = _resolve_customer_info(cust.custom_otobitz_customer_id, cache)
+		if not info:
+			failed += 1
+			continue
+
+		updates = {}
+		real_name = safe_name(info.get("nama"))
+		if real_name and real_name != cust.customer_name:
+			updates["customer_name"] = real_name
+		real_npwp = clean_or_none(info.get("npwp"))
+		if real_npwp and real_npwp != cust.tax_id:
+			updates["tax_id"] = real_npwp
+
+		if updates:
+			frappe.db.set_value("Customer", cust.name, updates, update_modified=False)
+			fixed += 1
+		frappe.db.commit()
+		time.sleep(0.2)
+
+	frappe.db.sql(
+		"""update `tabSales Order` so
+		join `tabCustomer` c on c.name = so.customer
+		set so.customer_name = c.customer_name
+		where so.customer_name != c.customer_name"""
+	)
+	frappe.db.sql(
+		"""update `tabSales Invoice` si
+		join `tabCustomer` c on c.name = si.customer
+		set si.customer_name = c.customer_name
+		where si.customer_name != c.customer_name"""
+	)
+	frappe.db.commit()
 
 	return {"checked": checked, "fixed": fixed, "failed": failed}

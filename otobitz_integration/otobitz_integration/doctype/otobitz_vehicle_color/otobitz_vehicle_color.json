@@ -5,6 +5,8 @@
  "creation": "2026-09-29 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
+ "show_title_field_in_link": 1,
+ "title_field": "nama",
  "field_order": [
   "section_break_info",
   "kode",

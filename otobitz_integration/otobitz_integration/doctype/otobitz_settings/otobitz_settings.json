@@ -20,6 +20,13 @@
   "column_break_so_endpoint",
   "so_sync_fallback_endpoint",
   "customer_lookup_endpoint",
+  "section_break_schedule",
+  "sync_hours",
+  "last_sync_trigger_hour_key",
+  "column_break_schedule",
+  "heavy_endpoints",
+  "heavy_endpoint_cooldown_seconds",
+  "light_endpoint_cooldown_seconds",
   "section_break_status",
   "last_sync_status",
   "column_break_status",
@@ -30,6 +37,14 @@
   "last_booking_sync_date",
   "last_orderparts_sync_date",
   "last_orderpekerjaanluar_sync_date",
+  "section_break_manual_sync",
+  "manual_sync_from_date",
+  "column_break_manual_sync",
+  "manual_sync_to_date",
+  "section_break_fix_customer_names",
+  "fix_customer_names_from_date",
+  "column_break_fix_customer_names",
+  "fix_customer_names_to_date",
   "section_break_lookup",
   "lookup_wo_number"
  ],
@@ -92,8 +107,8 @@
    "label": "Konfigurasi Endpoint SO (Fallback Otomatis)"
   },
   {
-   "default": "otoxpertsoandpartnondecrypt",
-   "description": "Endpoint utama buat tarik data WO/SO. otoxpertsoandpartnondecrypt itu cepat tapi data customer-nya diacak (butuh lookup terpisah, lihat Endpoint Lookup Nama Customer di bawah) - otoxpertsoandpart itu lebih lambat/gampang timeout kalau datanya banyak tapi datanya udah asli langsung, gak butuh lookup.",
+   "default": "otoxpertsoandpart",
+   "description": "Endpoint utama buat tarik data WO/SO. otoxpertsoandpart itu datanya udah asli langsung, gak butuh lookup tambahan - tapi gampang timeout/gak balikin data kalau jendela tanggalnya lebar (banyak data sekaligus). otoxpertsoandpartnondecrypt lebih tahan terhadap data banyak tapi nama/alamat customer-nya diacak (butuh lookup terpisah per customer, lihat Endpoint Lookup Nama Customer di bawah - ini sumber utama kena rate-limit kalau dipakai terus-terusan, makanya dipasang sebagai Fallback aja, bukan default).",
    "fieldname": "so_sync_endpoint",
    "fieldtype": "Select",
    "label": "Endpoint Utama",
@@ -111,7 +126,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "otoxpertsoandpart",
+   "default": "otoxpertsoandpartnondecrypt",
    "depends_on": "so_sync_auto_fallback",
    "fieldname": "so_sync_fallback_endpoint",
    "fieldtype": "Select",
@@ -124,6 +139,50 @@
    "fieldname": "customer_lookup_endpoint",
    "fieldtype": "Data",
    "label": "Endpoint Lookup Nama Customer"
+  },
+  {
+   "fieldname": "section_break_schedule",
+   "fieldtype": "Section Break",
+   "label": "Jadwal & Cooldown Sync"
+  },
+  {
+   "default": "1,7,9,11,13,15,17,19,21",
+   "description": "Jam (0-23, pisah koma) kapan sync otomatis dijalankan. Dicek tiap 15 menit, tapi cuma benar-benar jalan sekali per jam yang terdaftar di sini - jarak antar jam yang gak terdaftar itulah waktu istirahat buat server OtoBitz, jadi H+0 (sync di hari yang sama) tetap kejaga tanpa bikin server kerja nonstop.",
+   "fieldname": "sync_hours",
+   "fieldtype": "Data",
+   "label": "Jam Sync (pisah koma)"
+  },
+  {
+   "fieldname": "last_sync_trigger_hour_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Last Sync Trigger Hour Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_schedule",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "otoxpertsoandpart",
+   "description": "Endpoint (pisah koma) yang paling sering kena rate-limit OtoBitz (misal otoxpertsoandpart, yang di dalamnya ada lookup nama customer per record) - dapat jeda Cooldown Endpoint Berat di bawah. Endpoint lain di luar daftar ini pakai Cooldown Endpoint Ringan.",
+   "fieldname": "heavy_endpoints",
+   "fieldtype": "Small Text",
+   "label": "Endpoint Berat"
+  },
+  {
+   "default": "150",
+   "description": "Jeda (detik) setelah endpoint berat selesai, sebelum lanjut ke endpoint berikutnya.",
+   "fieldname": "heavy_endpoint_cooldown_seconds",
+   "fieldtype": "Int",
+   "label": "Cooldown Endpoint Berat (detik)"
+  },
+  {
+   "default": "20",
+   "description": "Jeda (detik) setelah endpoint ringan selesai, sebelum lanjut ke endpoint berikutnya.",
+   "fieldname": "light_endpoint_cooldown_seconds",
+   "fieldtype": "Int",
+   "label": "Cooldown Endpoint Ringan (detik)"
   },
   {
    "fieldname": "section_break_status",
@@ -188,6 +247,48 @@
    "label": "Last Order Pekerjaan Luar Sync Date",
    "read_only": 1,
    "description": "Watermark for masterdata_orderpekerjaanluar's incremental date-window sync."
+  },
+  {
+   "fieldname": "section_break_manual_sync",
+   "fieldtype": "Section Break",
+   "label": "Sinkronisasi Manual (Per Tanggal)"
+  },
+  {
+   "description": "Sinkron ulang Sales Order, Payment Entry, Journal Entry, dan Purchase Order PERSIS di rentang tanggal ini - gak ada tambahan buffer hari (beda dari sync jam-an biasa yang sengaja mundur beberapa hari buat jaga-jaga). Gak ngubah watermark sync yang biasa jalan otomatis - ini cuma cek/tarik ulang tanggal tertentu aja, aman diulang-ulang kapan saja.",
+   "fieldname": "manual_sync_from_date",
+   "fieldtype": "Date",
+   "label": "Sync Ulang dari Tanggal"
+  },
+  {
+   "fieldname": "column_break_manual_sync",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Kosongkan buat sampai hari ini - isi buat sync persis 1 hari aja (sama dengan tanggal awal) atau rentang tertentu.",
+   "fieldname": "manual_sync_to_date",
+   "fieldtype": "Date",
+   "label": "Sampai Tanggal (opsional)"
+  },
+  {
+   "fieldname": "section_break_fix_customer_names",
+   "fieldtype": "Section Break",
+   "label": "Benerin Nama Customer (Per Tanggal)"
+  },
+  {
+   "description": "Cek ulang nama Customer PERSIS buat yang pernah transaksi di rentang tanggal ini (dicocokkan dari Sales Order/Sales Invoice), bukan nyapu semua Customer OtoBitz. Buat kalau udah tau tanggal mana yang kena masalah nama acak - beres lebih cepat/murah daripada 'Benerin Nama Customer' yang nyapu semua.",
+   "fieldname": "fix_customer_names_from_date",
+   "fieldtype": "Date",
+   "label": "Dari Tanggal"
+  },
+  {
+   "fieldname": "column_break_fix_customer_names",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Kosongkan buat persis 1 hari aja (sama dengan Dari Tanggal).",
+   "fieldname": "fix_customer_names_to_date",
+   "fieldtype": "Date",
+   "label": "Sampai Tanggal (opsional)"
   },
   {
    "fieldname": "section_break_lookup",

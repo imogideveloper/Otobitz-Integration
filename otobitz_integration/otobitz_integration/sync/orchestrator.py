@@ -17,8 +17,11 @@ sync_customers() is still there if a full one-off catalog sync is ever
 genuinely needed; it's just not automatic.
 """
 
+import functools
+import time
+
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import getdate, nowdate, now_datetime
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError
 from otobitz_integration.otobitz_integration.sync.common import acquire_sync_lock, release_sync_lock, renew_sync_lock
@@ -64,16 +67,65 @@ SYNC_STEPS = [
 	("cogsparts", sync_cogsparts),
 ]
 
+# The subset of SYNC_STEPS that's actually date-windowed (reads/advances its
+# own watermark via get_sync_window() in its module) - everything else above
+# (vehicle masters, suppliers, spareparts, ...) has no date filter at all, so
+# "re-sync from a date" is meaningless for those. Paired with each step's own
+# OtoBitz Settings watermark field, so run_manual_sync_from_date() below can
+# rewind just these before re-running them.
+DATE_WINDOWED_STEPS = [
+	("otoxpertsoandpart", sync_service_orders, "last_so_sync_date"),
+	("penerimaanuang", sync_penerimaan, "last_penerimaan_sync_date"),
+	("pengeluaranuang", sync_pengeluaran, "last_pengeluaran_sync_date"),
+	("penerimaanuangmukabooking", sync_booking, "last_booking_sync_date"),
+	("masterdata_orderparts", sync_orderparts, "last_orderparts_sync_date"),
+	("masterdata_orderpekerjaanluar", sync_orderpekerjaanluar, "last_orderpekerjaanluar_sync_date"),
+]
+
+
+def trigger_scheduled_sync():
+	"""Scheduler entrypoint for hooks.py's scheduler_events["cron"] (fires
+	every 15 minutes). Only actually triggers a sync once per hour listed in
+	OtoBitz Settings' "Jam Sync" - the gap between configured hours is the
+	rest period the OtoBitz server needs (confirmed: hitting it nonstop with
+	no gap at all is what was causing it to work too hard and throw 504s),
+	while still syncing same-day (H+0) instead of the once-a-day/next-day
+	pattern the other system on this same API uses.
+
+	Checking every 15 minutes rather than scheduling each hour as its own
+	separate cron line keeps the actual run times adjustable from the Desk
+	(OtoBitz Settings) with no code change or restart - editing "Jam Sync"
+	takes effect on the very next 15-minute check."""
+	settings = frappe.get_single("OtoBitz Settings")
+	if not settings.enabled:
+		return
+
+	configured_hours = {
+		int(h.strip()) for h in (settings.sync_hours or "").split(",") if h.strip().isdigit()
+	}
+	now = now_datetime()
+	if now.hour not in configured_hours:
+		return
+
+	# one slot per calendar hour - without this, the 15-minute checker would
+	# re-trigger up to 4 times during the same configured hour
+	hour_key = now.strftime("%Y-%m-%d-%H")
+	if settings.last_sync_trigger_hour_key == hour_key:
+		return
+
+	frappe.db.set_single_value("OtoBitz Settings", "last_sync_trigger_hour_key", hour_key)
+	frappe.db.commit()
+	trigger_hourly_sync()
+
 
 def trigger_hourly_sync():
-	"""Scheduler entrypoint for hooks.py's scheduler_events["hourly_long"].
-
-	Enqueues run_hourly_sync with an explicit timeout instead of letting it
+	"""Enqueues run_hourly_sync with an explicit timeout instead of letting it
 	run directly under whatever default timeout Frappe's scheduler assigns
 	the "long" queue (1500s) - real OtoBitz endpoints (otoxpertsoandpart in
-	particular) can take longer than that when the upstream API is slow.
-	Shares job_id with sync_now()'s manual enqueue so the two can't overlap.
-	"""
+	particular) can take longer than that when the upstream API is slow, and
+	now that _run_all_steps() also sleeps between endpoints for the cooldown
+	above, a full run legitimately takes even longer.
+	Shares job_id with sync_now()'s manual enqueue so the two can't overlap."""
 	frappe.enqueue(
 		"otobitz_integration.otobitz_integration.sync.orchestrator.run_hourly_sync",
 		queue="long",
@@ -94,11 +146,50 @@ def run_hourly_sync():
 		release_sync_lock()
 
 
-def _run_all_steps():
+def run_manual_sync_from_date(from_date, to_date=None):
+	"""Runs the 6 date-windowed steps for an EXACT date range an admin
+	picked - from_date..(to_date or today) - bypassing each module's own
+	watermark/overlap-days logic entirely via the date_range param every
+	sync_X() function now accepts (see each module's own signature).
+	Deliberately does NOT touch any watermark: this is a bounded, re-runnable
+	probe of a specific date (e.g. "did OtoBitz actually have WO data for
+	2026-11-06"), not a way to advance the real incremental position - an
+	earlier version rewound watermarks instead, which both pulled in an
+	unwanted extra few days from each module's own OVERLAP_DAYS and had a
+	bug where an all-time-unset watermark (reads back as the sentinel
+	0001-01-01, not None) silently failed to rewind at all, falling through
+	to "first day of the current month" instead of the requested date.
+
+	For exactly the scenario this was built for: the live OtoBitz endpoint
+	going down for a day or two (confirmed to happen - see
+	otoxpertsoandpartnondecrypt's own fallback in OtoBitz Settings) leaves a
+	gap; this lets an admin pick the exact date(s) and check/re-pull them
+	right now, from the Desk, no code/restart needed."""
+	if not acquire_sync_lock():
+		frappe.throw(frappe._("A sync is already in progress - try again once it finishes."))
+
+	try:
+		date_range = (str(getdate(from_date)), str(getdate(to_date)) if to_date else nowdate())
+		steps = [
+			(endpoint, functools.partial(sync_fn, date_range=date_range))
+			for endpoint, sync_fn, _ in DATE_WINDOWED_STEPS
+		]
+		_run_all_steps(steps)
+	finally:
+		release_sync_lock()
+
+
+def _run_all_steps(steps=None):
+	steps = SYNC_STEPS if steps is None else steps
+	settings = frappe.get_single("OtoBitz Settings")
+	heavy_endpoints = {e.strip() for e in (settings.heavy_endpoints or "").split(",") if e.strip()}
+	heavy_cooldown = settings.heavy_endpoint_cooldown_seconds or 150
+	light_cooldown = settings.light_endpoint_cooldown_seconds or 20
+
 	overall_status = "Success"
 	problem_logs = []
 
-	for endpoint, sync_fn in SYNC_STEPS:
+	for step_index, (endpoint, sync_fn) in enumerate(steps):
 		renew_sync_lock()
 		started_at = now_datetime()
 		log = frappe.new_doc("OtoBitz Sync Log")
@@ -133,6 +224,14 @@ def _run_all_steps():
 
 		if log.status != "Success":
 			problem_logs.append(log)
+
+		# rest between endpoints instead of hammering OtoBitz back-to-back -
+		# longer after a heavy/rate-sensitive endpoint, shorter otherwise.
+		# Skipped after the last step - nothing left to protect by then.
+		if step_index < len(steps) - 1:
+			cooldown = heavy_cooldown if endpoint in heavy_endpoints else light_cooldown
+			time.sleep(cooldown)
+			renew_sync_lock()
 
 	frappe.db.set_single_value(
 		"OtoBitz Settings",

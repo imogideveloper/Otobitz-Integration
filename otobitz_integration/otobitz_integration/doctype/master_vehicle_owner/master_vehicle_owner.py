@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class OtoBitzVehicleOwner(Document):
+class MasterVehicleOwner(Document):
 	pass

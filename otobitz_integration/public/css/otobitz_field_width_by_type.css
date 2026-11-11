@@ -1,0 +1,46 @@
+/* Global: standalone form fields get a fixed max-width keyed to their
+   fieldtype (short types stay short, text-ish types stay full width),
+   instead of every field stretching to the column's full width. Grid/table
+   columns are explicitly excluded below - those must stay aligned with
+   their header row, so a per-type width there would break the grid. */
+
+.form-layout .frappe-control[data-fieldtype="Int"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Check"] .control-input-wrapper {
+	max-width: 90px;
+}
+.form-layout .frappe-control[data-fieldtype="Float"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Percent"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Rating"] .control-input-wrapper {
+	max-width: 120px;
+}
+.form-layout .frappe-control[data-fieldtype="Currency"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Duration"] .control-input-wrapper {
+	max-width: 150px;
+}
+.form-layout .frappe-control[data-fieldtype="Date"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Time"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Color"] .control-input-wrapper {
+	max-width: 140px;
+}
+.form-layout .frappe-control[data-fieldtype="Datetime"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Phone"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Barcode"] .control-input-wrapper {
+	max-width: 180px;
+}
+.form-layout .frappe-control[data-fieldtype="Select"] .control-input-wrapper {
+	max-width: 220px;
+}
+.form-layout .frappe-control[data-fieldtype="Link"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Dynamic Link"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Data"] .control-input-wrapper,
+.form-layout .frappe-control[data-fieldtype="Password"] .control-input-wrapper {
+	max-width: 280px;
+}
+
+/* Grid/table cells always stay full width inside their column - overrides
+   all the per-type rules above regardless of fieldtype. */
+.form-grid .control-input-wrapper,
+.grid-row .control-input-wrapper,
+.grid-static-col .control-input-wrapper {
+	max-width: none !important;
+}

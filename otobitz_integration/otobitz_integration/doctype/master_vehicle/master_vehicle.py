@@ -6,7 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import getdate, nowdate
 
 
-class OtoBitzVehicle(Document):
+class MasterVehicle(Document):
 	def validate(self):
 		self.track_owner()
 
@@ -48,15 +48,14 @@ class OtoBitzVehicle(Document):
 def change_owner(vehicle, customer, date=None, note=None, source="Manual"):
 	"""Change a vehicle's owner and record it in the owner history.
 
-	Used by the "Ganti Pemilik" button on the vehicle form and by the prompt on a
-	hand-made Sales Order. The history row itself is written by
-	OtoBitzVehicle.track_owner when the document saves.
-	"""
+	Used by the "Ganti Pemilik" button on the vehicle form and by the "Update
+	Data Pemilik" prompt on a Sales Order. The history row itself is written by
+	MasterVehicle.track_owner when the document saves."""
 	if source not in ("Manual", "Sales Order"):
 		source = "Manual"
 	if not customer or not frappe.db.exists("Customer", customer):
 		frappe.throw(frappe._("Customer {0} not found").format(customer))
-	doc = frappe.get_doc("OtoBitz Vehicle", vehicle)
+	doc = frappe.get_doc("Master Vehicle", vehicle)
 	doc.check_permission("write")
 	if doc.customer == customer:
 		frappe.throw(frappe._("{0} is already the owner of this vehicle").format(customer))
@@ -65,11 +64,11 @@ def change_owner(vehicle, customer, date=None, note=None, source="Manual"):
 	doc.flags.owner_note = note
 	doc.customer = customer
 	doc.save()
-	return doc.customer
+	return {"new_owner": doc.customer, "new_owner_name": frappe.db.get_value("Customer", doc.customer, "customer_name")}
 
 
 @frappe.whitelist()
-def search_vehicle(doctype, txt, searchfield, start, page_len, filters):
+def search_vehicle(doctype, txt, searchfield, start: int, page_len: int, filters):
 	txt = f"%{txt}%"
 	conditions = []
 	values = [txt, txt, txt, txt]
@@ -92,7 +91,7 @@ def search_vehicle(doctype, txt, searchfield, start, page_len, filters):
 			name,
 			coalesce(nopolisi, norangka) as value_label,
 			concat('Chassis: ', coalesce(norangka, '-'), ' | ', coalesce(customer, 'No Customer')) as description
-		from `tabOtoBitz Vehicle`
+		from `tabMaster Vehicle`
 		where
 			(nopolisi like %s
 			or norangka like %s
@@ -106,3 +105,36 @@ def search_vehicle(doctype, txt, searchfield, start, page_len, filters):
 		""",
 		tuple(values),
 	)
+
+
+@frappe.whitelist()
+def create_vehicle(
+	norangka,
+	customer,
+	nopolisi=None,
+	nomesin=None,
+	vehicle_type=None,
+	vehicle_color=None,
+	tahunpembuatan=None,
+	last_odometer=None,
+):
+	if frappe.session.user == "Guest":
+		frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+
+	if frappe.db.exists("Master Vehicle", norangka):
+		frappe.throw(frappe._("A vehicle with chassis number {0} already exists").format(norangka))
+
+	doc = frappe.get_doc({
+		"doctype": "Master Vehicle",
+		"norangka": norangka,
+		"nopolisi": nopolisi,
+		"nomesin": nomesin,
+		"customer": customer,
+		"vehicle_type": vehicle_type,
+		"vehicle_color": vehicle_color,
+		"tahunpembuatan": tahunpembuatan,
+		"last_odometer": last_odometer,
+	})
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"name": doc.name, "nopolisi": doc.nopolisi}
