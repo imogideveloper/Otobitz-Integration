@@ -28,6 +28,7 @@ required_apps = ["frappe/erpnext"]
 app_include_css = [
 	"/assets/otobitz_integration/css/desk.css?v=17",
 	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=13",
+	"/assets/otobitz_integration/css/otobitz_field_width_by_type.css?v=1",
 ]
 # The query string is a manual cache-buster: app_include_js isn't routed
 # through esbuild's content-hashed .bundle.js/assets.json manifest (that only
@@ -37,7 +38,7 @@ app_include_css = [
 # would ever show a change, and a plain refresh could still serve the stale
 # cached copy. Bump the v=N for a file every time that file changes.
 app_include_js = [
-	"/assets/otobitz_integration/js/otobitz_navbar.js?v=14",
+	"/assets/otobitz_integration/js/otobitz_navbar.js?v=16",
 	"/assets/otobitz_integration/js/otobitz_group_by.js?v=12",
 	"/assets/otobitz_integration/js/otobitz_favorites.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_list_page_length.js?v=1",
@@ -169,6 +170,9 @@ after_app_install = "otobitz_integration.install.after_app_install"
 # Hook on document methods and events
 
 doc_events = {
+	"Customer": {
+		"before_insert": "otobitz_integration.customer.set_manual_customer_id",
+	},
 	"Sales Order": {
 		"before_insert": "otobitz_integration.sales_order.set_next_service_date",
 		"before_validate": "otobitz_integration.sales_order.set_default_payment_terms",
@@ -222,9 +226,14 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"hourly_long": [
-		"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_hourly_sync",
-	],
+	"cron": {
+		# checks every 15 min, but only actually triggers a sync once per
+		# hour listed in OtoBitz Settings' "Jam Sync" - see
+		# orchestrator.trigger_scheduled_sync()'s own docstring for why
+		"*/15 * * * *": [
+			"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_scheduled_sync",
+		],
+	},
 	"daily": [
 		"otobitz_integration.otobitz_integration.sync.reconciliation.daily_reconciliation_check",
 	],

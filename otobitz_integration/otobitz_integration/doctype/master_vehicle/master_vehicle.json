@@ -11,10 +11,17 @@
   "nopolisi",
   "nomesin",
   "column_break_main",
+  "customer_id",
   "customer",
   "section_break_spesifikasi",
   "vehicle_type",
+  "vehicle_type_name",
+  "vehicle_category",
+  "vehicle_category_name",
+  "vehicle_brand",
+  "vehicle_transmisi",
   "vehicle_color",
+  "vehicle_color_name",
   "column_break_spec",
   "tahunpembuatan",
   "last_odometer"
@@ -52,6 +59,14 @@
    "fieldtype": "Column Break"
   },
   {
+   "fetch_from": "customer.custom_otobitz_customer_id",
+   "fetch_if_empty": 1,
+   "fieldname": "customer_id",
+   "fieldtype": "Data",
+   "label": "ID Customer",
+   "read_only": 1
+  },
+  {
    "fieldname": "customer",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -74,10 +89,62 @@
    "read_only": 1
   },
   {
+   "fetch_from": "vehicle_type.nama",
+   "fetch_if_empty": 1,
+   "fieldname": "vehicle_type_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Tipe",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "vehicle_type.vehicle_category",
+   "fetch_if_empty": 1,
+   "fieldname": "vehicle_category",
+   "fieldtype": "Link",
+   "label": "Vehicle Category",
+   "options": "OtoBitz Vehicle Category",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "vehicle_category.nama",
+   "fetch_if_empty": 1,
+   "fieldname": "vehicle_category_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Kategori",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "vehicle_type.brand",
+   "fetch_if_empty": 1,
+   "fieldname": "vehicle_brand",
+   "fieldtype": "Data",
+   "label": "Brand",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "vehicle_type.transmisi",
+   "fetch_if_empty": 1,
+   "fieldname": "vehicle_transmisi",
+   "fieldtype": "Data",
+   "label": "Transmisi",
+   "read_only": 1
+  },
+  {
    "fieldname": "vehicle_color",
    "fieldtype": "Link",
    "label": "Vehicle Color",
    "options": "OtoBitz Vehicle Color",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "vehicle_color.nama",
+   "fetch_if_empty": 1,
+   "fieldname": "vehicle_color_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nama Warna",
    "read_only": 1
   },
   {
@@ -99,10 +166,10 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 00:00:00.000000",
+ "modified": "2026-11-10 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
- "name": "OtoBitz Vehicle",
+ "name": "Master Vehicle",
  "owner": "Administrator",
  "permissions": [
   {

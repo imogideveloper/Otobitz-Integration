@@ -49,7 +49,7 @@ RATE_LIMIT_RETRY_DELAY_SECONDS = 20
 
 
 class OtoBitzAPIError(Exception):
-	def __init__(self, message, retry_after=None):
+	def __init__(self, message, retry_after=None, status_code=None):
 		super().__init__(message)
 		# OtoBitz's "Too Many Requests" body includes its own
 		# retry_after (seconds) - confirmed live: 56, not the
@@ -58,6 +58,13 @@ class OtoBitzAPIError(Exception):
 		# exactly why 4 retries in a row still wasn't enough - every
 		# retry fired back into the same still-active rate limit window.
 		self.retry_after = retry_after
+		# HTTP status, when this came from an actual HTTP error response
+		# (not the "200 with data['error']" business-error shape rate
+		# limiting uses) - lets call_api() retry transient gateway
+		# failures (502/503/504 - confirmed live: even /api/token/gettoken
+		# itself returned a 504 HTML page, not just the data endpoints)
+		# without having to string-match arbitrary HTML error pages.
+		self.status_code = status_code
 
 
 def get_settings():
@@ -93,7 +100,8 @@ def get_token(force_refresh: bool = False) -> str:
 		# 404/502 from the upstream token endpoint) was aborting a whole
 		# sync_service_orders() run instead of just costing it one retry.
 		raise OtoBitzAPIError(
-			f"HTTP {response.status_code} fetching OtoBitz token: {response.text[:500]}"
+			f"HTTP {response.status_code} fetching OtoBitz token: {response.text[:500]}",
+			status_code=response.status_code,
 		) from exc
 
 	if payload.get("status_code") != 200 or not payload.get("token"):
@@ -109,6 +117,19 @@ def _is_rate_limited(message: str) -> bool:
 	return "too many request" in (message or "").lower()
 
 
+# Classic transient gateway failures - confirmed live that even
+# /api/token/gettoken itself can 504 (the whole upstream being briefly
+# unreachable, not specific to any one endpoint/payload). 500 is
+# deliberately excluded: that's as likely to be a genuine application bug
+# on OtoBitz's side as a transient blip, and retrying it blindly risks
+# masking a real error instead of a real recovery.
+RETRYABLE_STATUS_CODES = {502, 503, 504}
+
+
+def _is_retryable_server_error(exc: Exception) -> bool:
+	return getattr(exc, "status_code", None) in RETRYABLE_STATUS_CODES
+
+
 def call_api(endpoint: str, payload: dict | None = None) -> dict:
 	"""POST to `/api/integration/{endpoint}` with a valid bearer token.
 
@@ -119,12 +140,14 @@ def call_api(endpoint: str, payload: dict | None = None) -> dict:
 	On a network-level failure (timeout, connection reset - the upstream API
 	has shown itself to be flaky, not just slow), retries a few times with a
 	short delay before giving up. On a "Too Many Requests" response (a 200
-	with data["error"] set, not an HTTP 429), retries with a longer delay
-	instead - this is every caller's only retry layer for both cases,
-	individual sync functions (e.g. the Customer paginator,
-	_resolve_customer_info()) don't need their own. Any other OtoBitzAPIError
-	(a genuine business error - bad params, real auth failure, ...) is not
-	retryable and raises immediately.
+	with data["error"] set, not an HTTP 429) or a transient gateway failure
+	(502/503/504 - confirmed live: even /api/token/gettoken itself can 504,
+	not just the data endpoints), retries with a longer delay instead - this
+	is every caller's only retry layer for all three cases, individual sync
+	functions (e.g. the Customer paginator, _resolve_customer_info()) don't
+	need their own. Any other OtoBitzAPIError (a genuine business error -
+	bad params, real auth failure, a plain 500, ...) is not retryable and
+	raises immediately.
 	"""
 	last_error: Exception | None = None
 	network_attempt = 0
@@ -139,7 +162,7 @@ def call_api(endpoint: str, payload: dict | None = None) -> dict:
 				raise OtoBitzAPIError(f"Network error calling {endpoint} after {NETWORK_RETRIES} attempts") from last_error
 			time.sleep(NETWORK_RETRY_DELAY_SECONDS)
 		except OtoBitzAPIError as exc:
-			if not _is_rate_limited(str(exc)):
+			if not (_is_rate_limited(str(exc)) or _is_retryable_server_error(exc)):
 				raise
 			last_error = exc
 			rate_limit_attempt += 1
@@ -169,7 +192,10 @@ def _call_api_once(endpoint: str, payload: dict | None) -> dict:
 		response.raise_for_status()
 		data = response.json()
 	except requests.exceptions.HTTPError as exc:
-		raise OtoBitzAPIError(f"HTTP {response.status_code} calling {endpoint}: {response.text[:500]}") from exc
+		raise OtoBitzAPIError(
+			f"HTTP {response.status_code} calling {endpoint}: {response.text[:500]}",
+			status_code=response.status_code,
+		) from exc
 	except requests.exceptions.JSONDecodeError as exc:
 		# A 200 with a non-JSON body (seen in practice - an upstream error
 		# page) used to escape here uncaught, same failure mode as the

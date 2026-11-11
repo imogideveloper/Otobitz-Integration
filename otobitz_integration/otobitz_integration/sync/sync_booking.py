@@ -54,8 +54,8 @@ def _iter_date_chunks(start: str, end: str):
 		chunk_start = add_days(chunk_end, 1)
 
 
-def sync_booking() -> dict:
-	tanggalawal, tanggalakhir = get_sync_window()
+def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
+	tanggalawal, tanggalakhir = date_range or get_sync_window()
 
 	fetched = created = updated = failed = 0
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
@@ -90,7 +90,8 @@ def sync_booking() -> dict:
 				frappe.db.commit()
 				failed += 1
 
-	frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
+	if date_range is None:
+		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}

@@ -123,6 +123,7 @@
 			label: "Setup / Master Data",
 			icon: "sliders-horizontal",
 			items: [
+				{ label: "Kendaraan (Pemilik, Rangka, Warna)", icon: "car-front", doctype: "Master Vehicle" },
 				{ label: "Vehicle Category", icon: "layout-grid", doctype: "OtoBitz Vehicle Category" },
 				{ label: "Vehicle Type", icon: "car", doctype: "OtoBitz Vehicle Type" },
 				{ label: "Vehicle Color", icon: "palette", doctype: "OtoBitz Vehicle Color" },

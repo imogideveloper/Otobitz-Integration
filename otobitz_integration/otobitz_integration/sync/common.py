@@ -291,7 +291,7 @@ def get_or_create_vehicle(
 	tahunpembuatan: str | None = None,
 	odometer=None,
 ) -> str | None:
-	"""Get-or-create an OtoBitz Vehicle, refreshing the fields that change
+	"""Get-or-create a Master Vehicle, refreshing the fields that change
 	over a vehicle's life (owner, odometer) on every call - unlike most
 	get_or_create_* helpers here this one is expected to be updated
 	repeatedly as the same vehicle comes back on later Work Orders."""
@@ -321,7 +321,7 @@ def get_or_create_vehicle(
 	}
 	values = {k: v for k, v in values.items() if v is not None}
 
-	name, _, _ = upsert("OtoBitz Vehicle", {"norangka": norangka}, values, ignore_mandatory=True)
+	name, _, _ = upsert("Master Vehicle", {"norangka": norangka}, values, ignore_mandatory=True)
 	return name
 
 
