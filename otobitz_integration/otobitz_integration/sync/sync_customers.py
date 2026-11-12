@@ -22,9 +22,11 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	clean_or_none,
+	looks_garbled,
 	renew_sync_lock,
 	safe_name,
 	upsert_safe,
+	valid_npwp_or_none,
 )
 
 PAGE_SIZE = 200
@@ -58,7 +60,28 @@ def sync_customers() -> dict:
 			if not idcustomer:
 				continue
 
-			tax_id = clean_or_none(row.get("npwp"))
+			# OtoBitz has, for a small number of customers, sent `nama`/`npwp`
+			# replaced with masked/garbled text instead of the real value
+			# (confirmed incident 2026-11-11: 9 live Customers corrupted this
+			# way). looks_garbled()/valid_npwp_or_none() catch that shape and
+			# the row is treated as if the field were absent, rather than
+			# overwriting a previously-good customer_name/tax_id with garbage.
+			name = safe_name(row.get("nama"))
+			# None here means "don't touch customer_name at all" (key left out
+			# of values below) - distinct from "" / falsy, which would still
+			# fall back to idcustomer.
+			customer_name = name or idcustomer
+			if name and looks_garbled(name):
+				frappe.log_error(title=f"OtoBitz sync: garbled nama skipped for {idcustomer}", message=name)
+				# Only fall back to idcustomer as the name for a brand-new
+				# customer - on an update this must stay unset so the
+				# existing good customer_name is left untouched.
+				customer_name = None if frappe.db.exists("Customer", {"custom_otobitz_customer_id": idcustomer}) else idcustomer
+
+			raw_npwp = row.get("npwp")
+			tax_id = valid_npwp_or_none(raw_npwp)
+			if clean_or_none(raw_npwp) and not tax_id:
+				frappe.log_error(title=f"OtoBitz sync: garbled/invalid npwp skipped for {idcustomer}", message=str(raw_npwp))
 
 			# Guard against a kodetipe/kodewarna the corresponding master sync
 			# hasn't (yet) created - a Link field would otherwise reject the
@@ -71,7 +94,7 @@ def sync_customers() -> dict:
 				vehicle_color = None
 
 			values = {
-				"customer_name": safe_name(row.get("nama")) or idcustomer,
+				"customer_name": customer_name,
 				"customer_type": "Individual" if (row.get("statuscustomer") or "").strip() == "Perorangan" else "Company",
 				"tax_id": tax_id,
 				"custom_otobitz_customer_id": idcustomer,
