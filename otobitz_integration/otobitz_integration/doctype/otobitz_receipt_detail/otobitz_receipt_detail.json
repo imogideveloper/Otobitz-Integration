@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "dedup_key",
+  "receipt_summary_html",
   "section_break_main",
   "endpoint",
   "nomor",
@@ -39,12 +40,19 @@
    "unique": 1
   },
   {
+   "fieldname": "receipt_summary_html",
+   "fieldtype": "HTML",
+   "label": "Ringkasan"
+  },
+  {
    "fieldname": "section_break_main",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "endpoint",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Endpoint",
@@ -54,6 +62,7 @@
   {
    "fieldname": "nomor",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Nomor",
@@ -62,6 +71,7 @@
   {
    "fieldname": "tanggal",
    "fieldtype": "Date",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Tanggal",
@@ -70,23 +80,27 @@
   {
    "fieldname": "status",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Status",
    "read_only": 1
   },
   {
    "fieldname": "column_break_main",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "kode_cabang",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Kode Cabang",
    "read_only": 1
   },
   {
    "fieldname": "namacabang",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Cabang",
    "read_only": 1
@@ -94,6 +108,7 @@
   {
    "fieldname": "nilai",
    "fieldtype": "Currency",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Nilai",
    "read_only": 1
@@ -102,41 +117,48 @@
    "collapsible": 1,
    "fieldname": "section_break_detail",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Detail"
   },
   {
    "description": "Diisi untuk baris penerimaanuang - nomor faktur Sales Invoice yang dibayar.",
    "fieldname": "noreferensi",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "No Referensi (Faktur)",
    "read_only": 1
   },
   {
    "fieldname": "paymentmetode",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Metode Pembayaran",
    "read_only": 1
   },
   {
    "fieldname": "column_break_detail",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "description": "Diisi untuk baris pengeluaranuang yang berupa pembayaran ke Supplier - kosong berarti setoran kas (Journal Entry Contra).",
    "fieldname": "namasupplier",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Nama Supplier",
    "read_only": 1
   },
   {
    "fieldname": "kodeaccount",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Kode Account",
    "read_only": 1
   },
   {
    "fieldname": "keterangan",
    "fieldtype": "Small Text",
+   "hidden": 1,
    "label": "Keterangan",
    "read_only": 1
   },
@@ -171,7 +193,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-09 00:00:00.000000",
+ "modified": "2026-11-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "OtoBitz Receipt Detail",
@@ -191,8 +213,11 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "nomor",
+ "show_title_field_in_link": 1,
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
+ "title_field": "nomor",
  "track_changes": 0
 }
