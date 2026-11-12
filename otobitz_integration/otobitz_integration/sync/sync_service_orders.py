@@ -56,6 +56,40 @@ TAXES_AND_CHARGES_TEMPLATE = "Sales Tax - O"
 # Per-line Item Tax Template (PPN 11%, account 2140313000) - only fills the
 # "Tax" column; skipped if it doesn't exist on this site.
 SALES_ITEM_TAX_TEMPLATE = "Inc PPN 11% - AIO"
+
+
+def _pin_oto_taxes(doc, header: dict, company: str) -> None:
+	"""Replace the template's percentage-computed PPN row with OtoBitz's own
+	ppn figure, and add its own rounding as a second row - without this,
+	ERPNext computes PPN as a single 11% pass over net_total (e.g.
+	768467 * 0.11 = 84531.37), while OtoBitz computes it per line item (each
+	individually rounded to the rupiah) then sums, plus its own cash-
+	rounding adjustment on the final total (confirmed live: grandtotal ==
+	dpp + ppn + rounding, all three straight from OtoBitz, not recomputed).
+	Net_total already matches exactly once the qty-from-subtotal fix above
+	has run; this is what makes grand_total match too, down to the rupiah.
+
+	charge_type "Actual" is what makes this survive ERPNext's own
+	recalculation on insert/submit - rate-based rows get recomputed from
+	rate * net_total, "Actual" rows use tax_amount exactly as given."""
+	ppn = flt(header.get("ppn"))
+	if doc.taxes:
+		doc.taxes[0].charge_type = "Actual"
+		doc.taxes[0].tax_amount = ppn
+
+	rounding = flt(header.get("rounding"))
+	if rounding:
+		round_off_account = frappe.db.get_value("Company", company, "round_off_account")
+		doc.append(
+			"taxes",
+			{
+				"charge_type": "Actual",
+				"account_head": round_off_account or (doc.taxes[0].account_head if doc.taxes else None),
+				"description": "Pembulatan (OtoBitz)",
+				"cost_center": doc.taxes[0].cost_center if doc.taxes else None,
+				"tax_amount": rounding,
+			},
+		)
 OVERLAP_DAYS = 3
 # A 2-day window took ~3 minutes and returned 1109 rows; a full-month window
 # (30 days) timed out every retry. Response time scales with the range, not
@@ -512,14 +546,20 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 			continue
 		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Units"
 		# `harga` is the gross per-unit price and `discperitem` a per-unit
-		# discount - OtoBitz's own `subtotal` = qty * (harga - discperitem),
-		# confirmed against a real WO. `price_list_rate` must be set to the
-		# gross price for ERPNext to actually apply `discount_amount`
-		# (setting `rate` alone and leaving price_list_rate unset means the
-		# discount is silently ignored - this is what happened the first
-		# time: the ERPNext total came out higher than OtoBitz's).
+		# discount - OtoBitz's own `subtotal` usually equals qty * (harga -
+		# discperitem), but not always: confirmed live on ~6.5% of archived
+		# items (e.g. "Ganti Oli Mesin": qty 0.07 * harga 252252 = 17657.64,
+		# but OtoBitz's own subtotal says 18018 - the qty OtoBitz reports is
+		# rounded for display to 2-3 decimals; the real value feeding its own
+		# subtotal isn't, e.g. ~0.0714286 here). `price_list_rate` must be
+		# set to the gross price for ERPNext to actually apply
+		# `discount_amount` (setting `rate` alone and leaving
+		# price_list_rate unset means the discount is silently ignored -
+		# this is what happened the first time: the ERPNext total came out
+		# higher than OtoBitz's).
 		price_list_rate = flt(row.get("harga"))
 		discount_amount = flt(row.get("discperitem"))
+		rate = price_list_rate - discount_amount
 		qty = flt(row.get("qty"))
 		# `or 1` alone only catches a literal 0 - some OtoBitz rows carry a
 		# genuinely tiny qty (e.g. 0.001) that survives that check but still
@@ -527,12 +567,20 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		# saved, tripping ERPNext's own "cannot be zero" validation on save.
 		if qty < 0.01:
 			qty = 1
+		elif rate:
+			# subtotal is what OtoBitz actually billed for this line - trust
+			# it over their own (possibly rounded-for-display) qty, so this
+			# Sales Order's qty * rate always lands on the real amount
+			# instead of silently under/over-billing by the rounding gap.
+			subtotal = flt(row.get("subtotal"))
+			if subtotal:
+				qty = subtotal / rate
 		item_row = {
 			"item_code": item_code,
 			"qty": qty,
 			"price_list_rate": price_list_rate,
 			"discount_amount": discount_amount,
-			"rate": price_list_rate - discount_amount,
+			"rate": rate,
 			"uom": stock_uom,
 			"conversion_factor": 1,
 		}
@@ -555,6 +603,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	so.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
 	so.set("taxes", [])
 	so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+	_pin_oto_taxes(so, header, company)
 
 	so.insert(ignore_permissions=True, ignore_mandatory=True)
 	so.submit()
@@ -592,6 +641,7 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
 	si.set("taxes", [])
 	si.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+	_pin_oto_taxes(si, header, si.company)
 
 	si.insert(ignore_permissions=True, ignore_mandatory=True)
 	si.submit()
