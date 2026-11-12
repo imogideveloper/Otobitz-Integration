@@ -9,8 +9,11 @@ case the centralized `call_api()` token refresh in api/client.py exists for.
 
 A customer can own more than one vehicle in the source system (several rows
 share the same `idcustomer`); Phase 1 keeps one ERPNext Customer per
-`idcustomer` and the vehicle custom fields simply reflect whichever row was
-seen last in the page walk (documented limitation, not a bug).
+`idcustomer`. This sync used to also cache "whichever vehicle was seen last"
+onto a handful of custom_otobitz_* fields on Customer itself, but that was
+pure duplication of OtoBitz Vehicle (kept properly up to date per-vehicle,
+keyed by norangka, via common.get_or_create_vehicle() on every Work Order) -
+those fields are now hidden on the Customer form and no longer written here.
 
 `datacustomerbynumber` (single-customer lookup by number) is a different,
 on-demand endpoint and is not part of this bulk sync - deferred to Phase 2.
@@ -83,26 +86,11 @@ def sync_customers() -> dict:
 			if clean_or_none(raw_npwp) and not tax_id:
 				frappe.log_error(title=f"OtoBitz sync: garbled/invalid npwp skipped for {idcustomer}", message=str(raw_npwp))
 
-			# Guard against a kodetipe/kodewarna the corresponding master sync
-			# hasn't (yet) created - a Link field would otherwise reject the
-			# whole row and abort this customer's upsert.
-			vehicle_type = clean(row.get("kodetipe"))
-			if vehicle_type and not frappe.db.exists("OtoBitz Vehicle Type", vehicle_type):
-				vehicle_type = None
-			vehicle_color = clean(row.get("kodewarna"))
-			if vehicle_color and not frappe.db.exists("OtoBitz Vehicle Color", vehicle_color):
-				vehicle_color = None
-
 			values = {
 				"customer_name": customer_name,
 				"customer_type": "Individual" if (row.get("statuscustomer") or "").strip() == "Perorangan" else "Company",
 				"tax_id": tax_id,
 				"custom_otobitz_customer_id": idcustomer,
-				"custom_otobitz_nopolisi": clean(row.get("nopolisi")),
-				"custom_otobitz_norangka": clean(row.get("norangka")),
-				"custom_otobitz_nomesin": clean(row.get("nomesin")),
-				"custom_otobitz_vehicle_type": vehicle_type,
-				"custom_otobitz_vehicle_color": vehicle_color,
 			}
 			values = {k: v for k, v in values.items() if v is not None}
 
