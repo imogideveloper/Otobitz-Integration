@@ -138,6 +138,40 @@ def clean_or_none(value) -> str | None:
 	return None if value in _PLACEHOLDER_VALUES else value
 
 
+def looks_garbled(value) -> bool:
+	"""True if `value` has the shape OtoBitz's `nama` has occasionally sent
+	instead of a real customer name (confirmed on 9 live Customers on
+	2026-11-11: e.g. "q6. fF6 HAvd6 jTFbAAeA6" in place of "PT. HRC PRIMA
+	SEJAHTERA") - punctuation/word boundaries preserved, letters inside each
+	word randomized with digits mixed in. A real Indonesian person/company
+	name never mixes a letter and a digit within the same word, so that's
+	the cheap, reliable tell. Used to skip writing `nama` over an existing
+	customer_name rather than silently overwriting good data with this."""
+	value = clean(value)
+	if not value:
+		return False
+	return any(
+		any(c.isdigit() for c in word) and any(c.isalpha() for c in word) for word in value.split()
+	)
+
+
+_NPWP_RE = re.compile(r"^\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}$")
+
+
+def valid_npwp_or_none(value) -> str | None:
+	"""clean_or_none(), and additionally drops anything not shaped like a
+	real NPWP (NN.NNN.NNN.N-NNN.NNN) - the same OtoBitz incident that
+	garbles `nama` (see looks_garbled()) garbles `npwp` the same way, e.g.
+	"nV.lB6.UqY.i-yzW.L2J" in place of "01.643.644.6-027.000": punctuation
+	kept, digits replaced with letters. A real NPWP is 15 digits in that
+	exact grouping, so anything else is rejected rather than written over
+	a good tax_id."""
+	value = clean_or_none(value)
+	if value is None or not _NPWP_RE.match(value):
+		return None
+	return value
+
+
 def clean_email(value) -> str | None:
 	"""clean_or_none(), and additionally drops anything that isn't even
 	shaped like an email - frappe.utils.validate_email_address rejects it
