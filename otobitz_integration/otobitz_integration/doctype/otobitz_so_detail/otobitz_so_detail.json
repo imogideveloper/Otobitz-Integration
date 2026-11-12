@@ -9,6 +9,7 @@
  "field_order": [
   "dedup_key",
   "endpoint",
+  "wo_summary_html",
   "section_break_wo",
   "nomorwo",
   "nofaktur",
@@ -58,13 +59,20 @@
    "read_only": 1
   },
   {
+   "fieldname": "wo_summary_html",
+   "fieldtype": "HTML",
+   "label": "Ringkasan WO"
+  },
+  {
    "fieldname": "section_break_wo",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Work Order"
   },
   {
    "fieldname": "nomorwo",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Nomor WO",
@@ -73,6 +81,7 @@
   {
    "fieldname": "nofaktur",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "No. Faktur",
    "read_only": 1
@@ -80,6 +89,7 @@
   {
    "fieldname": "tanggal",
    "fieldtype": "Date",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Tanggal",
@@ -88,6 +98,7 @@
   {
    "fieldname": "statuswo",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status WO",
@@ -95,17 +106,20 @@
   },
   {
    "fieldname": "column_break_wo",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "kode_cabang",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Kode Cabang",
    "read_only": 1
   },
   {
    "fieldname": "namacabang",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Cabang",
@@ -114,17 +128,20 @@
   {
    "fieldname": "teknisi",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Teknisi",
    "read_only": 1
   },
   {
    "fieldname": "section_break_customer",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Customer & Kendaraan"
   },
   {
    "fieldname": "customer_name",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Nama Customer",
    "read_only": 1
@@ -132,23 +149,27 @@
   {
    "fieldname": "nopolisi",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Nomor Polisi",
    "read_only": 1
   },
   {
    "fieldname": "section_break_item",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Item"
   },
   {
    "fieldname": "kodereferensi",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Kode Item",
    "read_only": 1
   },
   {
    "fieldname": "namareferensi",
    "fieldtype": "Data",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Nama Item",
    "read_only": 1
@@ -156,34 +177,40 @@
   {
    "fieldname": "jenisdoc",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Jenis (Part/Jasa)",
    "read_only": 1
   },
   {
    "fieldname": "qty",
    "fieldtype": "Float",
+   "hidden": 1,
    "label": "Qty",
    "read_only": 1
   },
   {
    "fieldname": "column_break_item",
-   "fieldtype": "Column Break"
+   "fieldtype": "Column Break",
+   "hidden": 1
   },
   {
    "fieldname": "harga",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Harga Satuan",
    "read_only": 1
   },
   {
    "fieldname": "discperitem",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Diskon",
    "read_only": 1
   },
   {
    "fieldname": "subtotal",
    "fieldtype": "Currency",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Subtotal Item",
    "read_only": 1
@@ -191,11 +218,13 @@
   {
    "fieldname": "section_break_total",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Total WO (diulang tiap baris)"
   },
   {
    "fieldname": "grandtotal",
    "fieldtype": "Currency",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Grand Total WO",
    "read_only": 1
@@ -203,12 +232,14 @@
   {
    "fieldname": "nilaipenerimaan",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Nilai Penerimaan",
    "read_only": 1
   },
   {
    "fieldname": "sisapiutang",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Sisa Piutang",
    "read_only": 1
   },
@@ -243,7 +274,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-21 00:00:00.000000",
+ "modified": "2026-11-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "OtoBitz SO Detail",
@@ -263,8 +294,11 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "nomorwo",
+ "show_title_field_in_link": 1,
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
+ "title_field": "nomorwo",
  "track_changes": 0
 }
