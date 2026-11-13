@@ -76,6 +76,10 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 	if doc.taxes:
 		doc.taxes[0].charge_type = "Actual"
 		doc.taxes[0].tax_amount = ppn
+		# The template's own row description is written for a percentage-rate
+		# row (e.g. "PPN Keluaran @ 11.0") - keep it short and free of the "@"
+		# now that the row is pinned to an exact amount instead of a rate.
+		doc.taxes[0].description = "PPN 11%"
 
 	rounding = flt(header.get("rounding"))
 	if rounding:
@@ -85,7 +89,7 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 			{
 				"charge_type": "Actual",
 				"account_head": round_off_account or (doc.taxes[0].account_head if doc.taxes else None),
-				"description": "Pembulatan (OtoBitz)",
+				"description": "Pembulatan",
 				"cost_center": doc.taxes[0].cost_center if doc.taxes else None,
 				"tax_amount": rounding,
 			},
@@ -561,20 +565,30 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		discount_amount = flt(row.get("discperitem"))
 		rate = price_list_rate - discount_amount
 		qty = flt(row.get("qty"))
+		# OtoBitz's own subtotal/subtotalppn for this line - used below for
+		# the qty correction, and copied as-is onto custom_subtotal_ppn/
+		# custom_ppn_amount so those two columns need no client-side
+		# recomputation (and can't drift from what OtoBitz itself reports).
+		oto_subtotal = flt(row.get("subtotal"))
+		oto_subtotal_ppn = flt(row.get("subtotalppn"))
 		# `or 1` alone only catches a literal 0 - some OtoBitz rows carry a
 		# genuinely tiny qty (e.g. 0.001) that survives that check but still
 		# rounds down to 0 at the Qty field's 2-3 decimal precision once
 		# saved, tripping ERPNext's own "cannot be zero" validation on save.
 		if qty < 0.01:
 			qty = 1
-		elif rate:
+		elif rate and oto_subtotal and abs(qty * rate - oto_subtotal) > 1:
 			# subtotal is what OtoBitz actually billed for this line - trust
 			# it over their own (possibly rounded-for-display) qty, so this
 			# Sales Order's qty * rate always lands on the real amount
 			# instead of silently under/over-billing by the rounding gap.
-			subtotal = flt(row.get("subtotal"))
-			if subtotal:
-				qty = subtotal / rate
+			# Gated to a >1 rupiah gap: OtoBitz's own qty is usually already
+			# precise enough that qty*rate lands within a few cents of
+			# subtotal on its own (plain float noise, not the 1/14-style
+			# rounded-for-display case this exists for) - recomputing qty
+			# for that would trade a clean "0.2" for an uglier "0.1999984"
+			# for zero practical benefit, confirmed live on SO-101-261100033.
+			qty = oto_subtotal / rate
 		item_row = {
 			"item_code": item_code,
 			"qty": qty,
@@ -583,6 +597,19 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 			"rate": rate,
 			"uom": stock_uom,
 			"conversion_factor": 1,
+			# All three straight from OtoBitz's own row rather than
+			# re-derived here: jenisdoc is OtoBitz's own Part/Jasa
+			# classification (no need to guess from the Item's item_group),
+			# and subtotal/subtotalppn are this line's own net/tax-inclusive
+			# amounts (confirmed per-item, not a WO-level total - see
+			# get_wo_summary() in otobitz_so_detail.py) - their difference is
+			# this line's own PPN amount, also exact since both sides of the
+			# subtraction are OtoBitz's own numbers, not a recomputed rate.
+			# Matches OtoBitz SO Detail's own Items table columns exactly,
+			# with no client-side recomputation needed.
+			"custom_jenis": "Jasa" if (row.get("jenisdoc") or "").strip().lower() == "jasa" else "Part",
+			"custom_subtotal_ppn": oto_subtotal_ppn,
+			"custom_ppn_amount": oto_subtotal_ppn - oto_subtotal if oto_subtotal_ppn else 0,
 		}
 		if item_cost_center:
 			item_row["cost_center"] = item_cost_center
@@ -612,6 +639,24 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 
 def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si = make_sales_invoice(so_name, ignore_permissions=True)
+	# custom_jenis/custom_subtotal_ppn/custom_ppn_amount are no_copy=1 (so a
+	# user re-making an invoice by hand doesn't drag stale OtoBitz figures
+	# along) - get_mapped_doc() honours that and skips them too, so they
+	# need to be copied explicitly here. Matched by so_detail, the one
+	# field the mapper does set (field_map "name": "so_detail") that ties
+	# each invoice row back to the exact Sales Order Item it came from.
+	so_item_values = frappe.get_all(
+		"Sales Order Item",
+		filters={"parent": so_name},
+		fields=["name", "custom_jenis", "custom_subtotal_ppn", "custom_ppn_amount"],
+	)
+	so_item_by_name = {row.name: row for row in so_item_values}
+	for item in si.items:
+		src = so_item_by_name.get(item.so_detail)
+		if src:
+			item.custom_jenis = src.custom_jenis
+			item.custom_subtotal_ppn = src.custom_subtotal_ppn
+			item.custom_ppn_amount = src.custom_ppn_amount
 	si.update_stock = 0
 	si.custom_otobitz_wo_number = nomorwo
 	si.custom_otobitz_branch = frappe.db.get_value("Sales Order", so_name, "custom_otobitz_branch")
