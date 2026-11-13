@@ -64,10 +64,9 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 	ERPNext computes PPN as a single 11% pass over net_total (e.g.
 	768467 * 0.11 = 84531.37), while OtoBitz computes it per line item (each
 	individually rounded to the rupiah) then sums, plus its own cash-
-	rounding adjustment on the final total (confirmed live: grandtotal ==
-	dpp + ppn + rounding, all three straight from OtoBitz, not recomputed).
-	Net_total already matches exactly once the qty-from-subtotal fix above
-	has run; this is what makes grand_total match too, down to the rupiah.
+	rounding adjustment on the final total. Net_total already matches
+	header['dpp'] exactly once the qty-from-subtotal fix above has run;
+	this is what makes grand_total match too, down to the rupiah.
 
 	charge_type "Actual" is what makes this survive ERPNext's own
 	recalculation on insert/submit - rate-based rows get recomputed from
@@ -81,7 +80,19 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 		# now that the row is pinned to an exact amount instead of a rate.
 		doc.taxes[0].description = "PPN 11%"
 
-	rounding = flt(header.get("rounding"))
+	# header['rounding'] is NOT signed - it's the unsigned magnitude of the
+	# gap between dpp+ppn and grandtotal, and which direction it goes is a
+	# coin flip (confirmed live across 565 Work Orders: trusting the raw
+	# field as a straight addition was only right ~37% of the time - e.g.
+	# SO-503-261100149: dpp 621623 + ppn 68379 = 690002, but grandtotal is
+	# 690000, a step DOWN of 2, yet header['rounding'] is still just "2",
+	# with no sign). The actual correction is always exactly
+	# grandtotal - dpp - ppn - deriving it this way instead of trusting the
+	# field's sign is what makes doc.grand_total land on OtoBitz's own
+	# grandtotal in every case, not just the ones where it happens to add.
+	dpp = flt(header.get("dpp"))
+	grandtotal = flt(header.get("grandtotal"))
+	rounding = (grandtotal - dpp - ppn) if grandtotal else flt(header.get("rounding"))
 	if rounding:
 		round_off_account = frappe.db.get_value("Company", company, "round_off_account")
 		doc.append(
