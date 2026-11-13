@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-11-09 00:00:00.000000",
- "description": "Arsip mentah 1:1 dari endpoint masterdata_orderparts dan masterdata_orderpekerjaanluar (Purchase Order) - 1 baris di sini = 1 order persis seperti yang dikirim OtoBitz (header + seluruh baris detail-nya), terlepas dari Purchase Order yang dibangun darinya berhasil dibuat atau tidak.",
+ "description": "Arsip mentah 1:1 dari endpoint masterdata_orderparts, masterdata_orderpekerjaanluar, dan masterdata_oppnt (Purchase Order) - 1 baris di sini = 1 order persis seperti yang dikirim OtoBitz (header + seluruh baris detail-nya), terlepas dari Purchase Order yang dibangun darinya berhasil dibuat atau tidak.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -11,6 +11,7 @@
   "po_summary_html",
   "section_break_main",
   "endpoint",
+  "sumber",
   "nomor",
   "tanggal",
   "column_break_main",
@@ -49,7 +50,18 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Endpoint",
-   "options": "masterdata_orderparts\nmasterdata_orderpekerjaanluar",
+   "options": "masterdata_orderparts\nmasterdata_orderpekerjaanluar\nmasterdata_oppnt",
+   "read_only": 1
+  },
+  {
+   "description": "TAM = masterdata_orderparts (part resmi dari PT. Toyota Astra Motor). Non TAM = masterdata_orderpekerjaanluar/masterdata_oppnt (jasa/part dari supplier pihak ketiga, bukan katalog resmi TAM).",
+   "fieldname": "sumber",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sumber",
+   "options": "TAM\nNon TAM",
    "read_only": 1
   },
   {

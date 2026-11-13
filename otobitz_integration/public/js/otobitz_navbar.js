@@ -109,8 +109,8 @@
 					],
 				},
 				{
-					// Arsip mentah masterdata_orderparts + masterdata_orderpekerjaanluar
-					// (1 baris = 1 order lengkap, header + semua detailnya) -
+					// Arsip mentah masterdata_orderparts + masterdata_orderpekerjaanluar +
+					// masterdata_oppnt (1 baris = 1 order lengkap, header + semua detailnya) -
 					// bukan doctype Purchase Order bawaan, sama alasannya dengan
 					// Sales Order (WO) di atas.
 					label: "Purchase Order",
@@ -119,6 +119,7 @@
 					filters: {},
 					embed: true,
 					columns: [
+						["sumber", "Sumber", "Status"],
 						["nomor", "Nomor Order"],
 						["kodesupplier", "Kode Supplier"],
 						["kode_cabang", "Cabang"],
@@ -165,6 +166,10 @@
 	// "FAKTUR", plus ERPNext's native Draft/Submitted/Paid/Overdue/...) -
 	// falls back to gray for anything unrecognized rather than guessing.
 	const STATUS_COLORS = [
+		// Checked before the plain "tam" rule below, otherwise "Non TAM"
+		// would match /\btam\b/ too and both render the same color.
+		[/non\s*tam/, "orange"],
+		[/^tam$/, "green"],
 		[/cancel/, "red"],
 		[/overdue|unpaid|failed|reject/, "red"],
 		[/draft/, "gray"],
