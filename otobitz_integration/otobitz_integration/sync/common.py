@@ -623,12 +623,19 @@ def log_receipt_detail_row(endpoint: str, row: dict) -> bool:
 
 
 def log_po_detail_row(endpoint: str, nomor: str, row: dict) -> bool:
-	"""Archive a raw masterdata_orderparts/masterdata_orderpekerjaanluar
-	order into `OtoBitz PO Detail`, one row per order - unlike
-	log_so_detail_rows() this is already keyed 1:1 with the Purchase Order
-	it builds (sync_orderparts.py/sync_orderpekerjaanluar.py never group
-	rows by anything), independent of whether that Purchase Order actually
-	gets created. Dedup/upsert key is `endpoint|nomor`."""
+	"""Archive a raw masterdata_orderparts/masterdata_orderpekerjaanluar/
+	masterdata_oppnt order into `OtoBitz PO Detail`, one row per order -
+	unlike log_so_detail_rows() this is already keyed 1:1 with the Purchase
+	Order it builds (sync_orderparts.py/sync_orderpekerjaanluar.py/
+	sync_oppnt.py never group rows by anything), independent of whether
+	that Purchase Order actually gets created. Dedup/upsert key is
+	`endpoint|nomor`.
+
+	`sumber` is the TAM/Non TAM distinction derived straight from which
+	endpoint the row came from - masterdata_orderparts is the only one
+	that's an official TAM catalog purchase (supplier "PT. Toyota Astra
+	Motor" every time, confirmed live); the other two are both third-party/
+	non-TAM suppliers, just for parts (oppnt) vs labor (orderpekerjaanluar)."""
 	import json
 
 	if not nomor:
@@ -637,6 +644,7 @@ def log_po_detail_row(endpoint: str, nomor: str, row: dict) -> bool:
 	detail = row.get("detail") or []
 	values = {
 		"endpoint": endpoint,
+		"sumber": "TAM" if endpoint == "masterdata_orderparts" else "Non TAM",
 		"nomor": nomor,
 		"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
 		"kode_cabang": clean(row.get("kodecabang")),
@@ -652,6 +660,28 @@ def log_po_detail_row(endpoint: str, nomor: str, row: dict) -> bool:
 	except Exception:
 		frappe.log_error(title=f"OtoBitz sync: failed to archive PO Detail row {dedup_key}")
 		return False
+
+
+@frappe.whitelist()
+def backfill_po_detail_sumber() -> dict:
+	"""One-off: `sumber` only started getting set by log_po_detail_row()
+	once this field existed - every OtoBitz PO Detail row archived before
+	that is stuck blank. Derived purely from each row's own `endpoint`
+	(same rule log_po_detail_row() uses), so this never needs the OtoBitz
+	API - a straight SQL-level backfill, not a per-row .save()."""
+	frappe.only_for("System Manager")
+	frappe.db.sql(
+		"""
+		update `tabOtoBitz PO Detail`
+		set sumber = case when endpoint = 'masterdata_orderparts' then 'TAM' else 'Non TAM' end
+		where ifnull(sumber, '') = ''
+		"""
+	)
+	fixed = frappe.db.sql(
+		"select count(*) from `tabOtoBitz PO Detail` where ifnull(sumber, '') != ''"
+	)[0][0]
+	frappe.db.commit()
+	return {"fixed": fixed}
 
 
 def get_or_create_uom(uom_name: str | None) -> str:

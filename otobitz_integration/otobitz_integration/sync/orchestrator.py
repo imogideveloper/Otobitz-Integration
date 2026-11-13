@@ -29,6 +29,7 @@ from otobitz_integration.otobitz_integration.sync.sync_booking import sync_booki
 from otobitz_integration.otobitz_integration.sync.sync_cogsparts import sync_cogsparts
 from otobitz_integration.otobitz_integration.sync.sync_orderparts import sync_orderparts
 from otobitz_integration.otobitz_integration.sync.sync_orderpekerjaanluar import sync_orderpekerjaanluar
+from otobitz_integration.otobitz_integration.sync.sync_oppnt import sync_oppnt
 from otobitz_integration.otobitz_integration.sync.sync_payment_modes import sync_payment_modes
 from otobitz_integration.otobitz_integration.sync.sync_penerimaan import sync_penerimaan
 from otobitz_integration.otobitz_integration.sync.sync_pengeluaran import sync_pengeluaran
@@ -64,6 +65,7 @@ SYNC_STEPS = [
 	("penerimaanuangmukabooking", sync_booking),
 	("masterdata_orderparts", sync_orderparts),
 	("masterdata_orderpekerjaanluar", sync_orderpekerjaanluar),
+	("masterdata_oppnt", sync_oppnt),
 	("cogsparts", sync_cogsparts),
 ]
 
@@ -80,6 +82,7 @@ DATE_WINDOWED_STEPS = [
 	("penerimaanuangmukabooking", sync_booking, "last_booking_sync_date"),
 	("masterdata_orderparts", sync_orderparts, "last_orderparts_sync_date"),
 	("masterdata_orderpekerjaanluar", sync_orderpekerjaanluar, "last_orderpekerjaanluar_sync_date"),
+	("masterdata_oppnt", sync_oppnt, "last_oppnt_sync_date"),
 ]
 
 

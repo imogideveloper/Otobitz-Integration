@@ -24,6 +24,7 @@ from otobitz_integration.otobitz_integration.sync.sync_orderparts import _sync_o
 from otobitz_integration.otobitz_integration.sync.sync_orderpekerjaanluar import (
 	_sync_one_order as _sync_one_orderpekerjaanluar,
 )
+from otobitz_integration.otobitz_integration.sync.sync_oppnt import _sync_one_order as _sync_one_oppnt
 from otobitz_integration.otobitz_integration.sync.sync_pengeluaran import _sync_one_expense
 from otobitz_integration.otobitz_integration.sync.sync_penerimaan import _sync_one_receipt
 from otobitz_integration.otobitz_integration.sync.sync_service_orders import _sync_one_wo
@@ -39,6 +40,7 @@ _DISPATCH = {
 	"penerimaanuangmukabooking": _sync_one_booking,
 	"masterdata_orderparts": _sync_one_orderpart,
 	"masterdata_orderpekerjaanluar": _sync_one_orderpekerjaanluar,
+	"masterdata_oppnt": _sync_one_oppnt,
 }
 
 

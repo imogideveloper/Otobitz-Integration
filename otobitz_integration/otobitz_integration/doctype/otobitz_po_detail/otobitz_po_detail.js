@@ -6,12 +6,14 @@
 // join needed here, so this dashboard is built entirely client-side from
 // this one record's own raw_data.
 //
-// Two source endpoints share this doctype (masterdata_orderparts and
-// masterdata_orderpekerjaanluar) with slightly different `detail[]` shapes:
-// orderparts rows carry kodepart/namapart/qty/harga/total/discperitem;
-// orderpekerjaanluar rows only carry kodeopl/namaopl/hargabeli (a flat
-// external-labor cost, no qty/discount breakdown) - po_item_row() below
-// normalizes both into the same 6-column table.
+// Three source endpoints share this doctype (masterdata_orderparts,
+// masterdata_orderpekerjaanluar, masterdata_oppnt) with slightly different
+// `detail[]` shapes: orderparts rows carry
+// kodepart/namapart/qty/harga/total/discperitem; orderpekerjaanluar and
+// oppnt rows only carry a flat cost (hargabeli, no qty/discount breakdown) -
+// just under different code/name field names (kodeopl/namaopl vs
+// kode_pekerjaan/nama_pekerjaan). pod_item_row() below normalizes all three
+// into the same 6-column table.
 
 function pod_rupiah(value) {
 	return frappe.format(flt(value), { fieldtype: "Currency" });
@@ -41,6 +43,16 @@ function pod_field_box(label, valueHtml, opts) {
 function pod_check_chip(ok, label) {
 	const icon = ok ? "✓" : "✕";
 	return `<span class="wo-chip ${ok ? "wo-chip-ok" : "wo-chip-fail"}">${icon} ${frappe.utils.escape_html(label)}</span>`;
+}
+
+// Makes TAM vs Non TAM jump out instead of reading as plain Select text -
+// `sumber` isn't part of the OtoBitz API's own raw_data (it's derived by
+// log_po_detail_row() in common.py from which endpoint the row came from),
+// so there's no h.sumber to fall back from, unlike endpoint/nomor/etc below.
+function pod_sumber_badge(value) {
+	if (!value) return pod_dash(value);
+	const cls = value === "TAM" ? "wo-badge-tam" : "wo-badge-nontam";
+	return `<span class="wo-badge wo-badge-lg ${cls}">${frappe.utils.escape_html(value)}</span>`;
 }
 
 // Shared .wo-* dashboard classes - same id/content as OtoBitz SO Detail's own
@@ -76,6 +88,9 @@ function pod_inject_style() {
 .wo-badge{font-size:11px;font-weight:500;padding:1px 8px;border-radius:10px;display:inline-block}
 .wo-badge-part{background:var(--bg-blue, #e8f0fe);color:var(--text-on-light-blue, #1a73e8)}
 .wo-badge-jasa{background:var(--bg-purple, #f3e8fd);color:var(--text-on-light-purple, #8430ce)}
+.wo-badge-tam{background:var(--bg-green, #e6f4ea);color:var(--text-on-light-green, #137333)}
+.wo-badge-nontam{background:var(--bg-orange, #fef3e2);color:var(--text-on-light-orange, #b35900)}
+.wo-badge-lg{font-size:13px;padding:3px 12px;border-radius:12px;font-weight:600}
 .wo-table-wrap{overflow-x:auto}
 .wo-item-table{margin-bottom:0;font-size:12px}
 .wo-item-table th{white-space:nowrap;font-size:11px}
@@ -88,7 +103,7 @@ function pod_inject_style() {
 	document.head.appendChild(s);
 }
 
-// Normalizes one detail[] entry (either shape) into {kode, nama, qty, harga, diskon, total}.
+// Normalizes one detail[] entry (any of the three shapes) into {kode, nama, qty, harga, diskon, total}.
 function pod_item_row(d) {
 	if ("kodepart" in d) {
 		return {
@@ -98,6 +113,19 @@ function pod_item_row(d) {
 			harga: flt(d.harga),
 			diskon: flt(d.discperitem),
 			total: flt(d.total),
+		};
+	}
+	// masterdata_oppnt - same flat-cost shape as orderpekerjaanluar below,
+	// just renamed fields (kode_pekerjaan/nama_pekerjaan instead of
+	// kodeopl/namaopl; hargabeli unchanged).
+	if ("kode_pekerjaan" in d) {
+		return {
+			kode: d.kode_pekerjaan,
+			nama: d.nama_pekerjaan,
+			qty: 1,
+			harga: flt(d.hargabeli),
+			diskon: 0,
+			total: flt(d.hargabeli),
 		};
 	}
 	return {
@@ -151,6 +179,7 @@ function pod_render(frm) {
 		<div class="wo-section">
 			<div class="wo-section-title">${__("Order")}</div>
 			<div class="wo-grid">
+				${pod_field_box(__("Sumber"), pod_sumber_badge(frm.doc.sumber))}
 				${pod_field_box(__("Nomor Order"), pod_dash(h.nomor))}
 				${pod_field_box(__("Tanggal"), pod_fmt_datetime(h.tanggal))}
 				${pod_field_box(__("Endpoint"), pod_dash(h.endpoint || frm.doc.endpoint))}
