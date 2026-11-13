@@ -64,9 +64,7 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 	ERPNext computes PPN as a single 11% pass over net_total (e.g.
 	768467 * 0.11 = 84531.37), while OtoBitz computes it per line item (each
 	individually rounded to the rupiah) then sums, plus its own cash-
-	rounding adjustment on the final total. Net_total already matches
-	header['dpp'] exactly once the qty-from-subtotal fix above has run;
-	this is what makes grand_total match too, down to the rupiah.
+	rounding adjustment on the final total.
 
 	charge_type "Actual" is what makes this survive ERPNext's own
 	recalculation on insert/submit - rate-based rows get recomputed from
@@ -90,7 +88,24 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 	# grandtotal - dpp - ppn - deriving it this way instead of trusting the
 	# field's sign is what makes doc.grand_total land on OtoBitz's own
 	# grandtotal in every case, not just the ones where it happens to add.
-	dpp = flt(header.get("dpp"))
+	#
+	# dpp is summed fresh from doc.items here (qty * rate), NOT taken from
+	# header['dpp'] - calculate_taxes_and_totals() hasn't run yet at this
+	# point (called before doc.insert()), so doc.net_total itself is still
+	# stale/unset, but more importantly the two can genuinely disagree by a
+	# few cents: OtoBitz's own per-item subtotal is sometimes rounded to the
+	# nearest rupiah while the qty behind it isn't (confirmed live,
+	# SO-503-261100156: item JS0004 qty 0.18 * rate 198198 = 35675.64, but
+	# OtoBitz's own subtotal for that line is 35676 - a 0.36 gap too small
+	# to trip the >1 rupiah qty-correction above, since that exists for
+	# actual bad qty, not OtoBitz's own item-level rounding). Deriving the
+	# correction from the doc's own net total instead of header['dpp'] keeps
+	# doc.grand_total self-consistent (net_total + ppn + rounding always
+	# equals it) AND exactly equal to OtoBitz's own grandtotal regardless of
+	# which side of that gap is "rounder" - the Pembulatan figure absorbs
+	# whatever's left over instead of carrying a hidden 0.36 mismatch
+	# through to grand_total.
+	dpp = sum(flt(it.qty) * flt(it.rate) for it in doc.items)
 	grandtotal = flt(header.get("grandtotal"))
 	rounding = (grandtotal - dpp - ppn) if grandtotal else flt(header.get("rounding"))
 	if rounding:
