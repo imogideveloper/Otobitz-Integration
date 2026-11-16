@@ -18,7 +18,17 @@ scheduled watchdog that emails System Managers) - one query, two
 consumers, so they can't drift out of sync with each other."""
 
 import frappe
-from frappe.utils import add_days, nowdate
+from frappe.utils import add_days, cint, flt, nowdate
+
+from otobitz_integration.otobitz_integration.sync.notifications import (
+	TONE_INFO,
+	TONE_WARNING,
+	email_wrapper,
+	failed_sync_breakdown_html,
+	get_failed_sync_grouped,
+	section_heading,
+	stat_strip,
+)
 
 GAP_ALERT_THRESHOLD = 5
 LOOKBACK_DAYS = 7
@@ -77,19 +87,46 @@ def daily_reconciliation_check():
 		return
 
 	table_rows = "".join(
-		f"<tr><td>{r['date']}</td><td>{r['fetched']}</td><td>{r['created']}</td><td>{r['gap']}</td></tr>"
+		f"""<tr>
+			<td style="padding:8px 10px 8px 0;border-bottom:1px solid #edf2f7;color:#1e293b;font-weight:600;">{r['date']}</td>
+			<td style="padding:8px 10px;border-bottom:1px solid #edf2f7;text-align:right;color:#64748b;">{r['fetched']}</td>
+			<td style="padding:8px 10px;border-bottom:1px solid #edf2f7;text-align:right;color:#64748b;">{r['created']}</td>
+			<td style="padding:8px 0 8px 10px;border-bottom:1px solid #edf2f7;text-align:right;font-weight:700;color:#b45309;">{r['gap']}</td>
+		</tr>"""
 		for r in problem_rows
 	)
-	message = f"""
-		<p>Rekonsiliasi harian otoxpertsoandpart menemukan selisih antara Work Order
-		yang di-fetch dari OtoBitz dan Sales Order yang benar-benar terbuat di sini
-		(selisih lebih dari {GAP_ALERT_THRESHOLD} per hari):</p>
-		<table border="1" cellpadding="4" style="border-collapse: collapse;">
-			<tr><th>Tanggal</th><th>WO di-fetch</th><th>SO dibuat</th><th>Selisih</th></tr>
+	total_gap = sum(flt(r["gap"]) for r in problem_rows)
+	stats_html = stat_strip(
+		[
+			(str(len(problem_rows)), "Hari Bermasalah", TONE_WARNING),
+			(str(int(total_gap)), "Total Selisih WO", TONE_WARNING),
+		]
+	)
+	body = f"""
+		<p style="margin:0 0 16px;">Rekonsiliasi harian <b>otoxpertsoandpart</b> menemukan selisih antara
+		Work Order yang di-fetch dari OtoBitz dan Sales Order yang benar-benar terbuat di sini
+		(selisih lebih dari {GAP_ALERT_THRESHOLD} per hari).</p>
+		{stats_html}
+		{section_heading("Rincian per Hari")}
+		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:12.5px;">
+			<tr style="color:#94a3b8;text-align:left;">
+				<th style="padding:0 10px 8px 0;font-weight:600;">Tanggal</th>
+				<th style="padding:0 10px 8px;text-align:right;font-weight:600;">WO di-fetch</th>
+				<th style="padding:0 10px 8px;text-align:right;font-weight:600;">SO dibuat</th>
+				<th style="padding:0 0 8px 10px;text-align:right;font-weight:600;">Selisih</th>
+			</tr>
 			{table_rows}
 		</table>
-		<p>Cek report "OtoBitz Sync Reconciliation" dan list "OtoBitz Failed Sync" untuk detail.</p>
+		<p style="color:#94a3b8;font-size:11.5px;margin-top:20px;">
+			Cek report &ldquo;OtoBitz Sync Reconciliation&rdquo; dan list &ldquo;OtoBitz Failed Sync&rdquo; untuk detail.
+		</p>
 	"""
+	message = email_wrapper(
+		title="OtoBitz Sync - Selisih Data Harian",
+		subtitle=f"{len(problem_rows)} hari dalam {LOOKBACK_DAYS} hari terakhir",
+		tone=TONE_WARNING,
+		body_html=body,
+	)
 	try:
 		frappe.sendmail(
 			recipients=recipients,
@@ -99,3 +136,68 @@ def daily_reconciliation_check():
 		)
 	except Exception:
 		frappe.log_error(title="OtoBitz reconciliation: failed to send alert email")
+
+
+def daily_failed_sync_digest():
+	"""scheduler_events["daily"] entrypoint - a once-a-day rollup of whatever
+	landed in "OtoBitz Failed Sync" in the last 24h, grouped by category.
+
+	Deliberately separate from daily_reconciliation_check() above even
+	though both run daily and both email System Managers: that one flags a
+	WO-vs-Sales-Order COUNT gap (missing documents), this one flags
+	per-record data/validation errors that log_failed_sync() already caught
+	and retried from - documents that exist, just didn't sync cleanly. A
+	bad run on one doesn't imply anything about the other. Silently skips
+	the email entirely on a clean day (nothing in the queue) rather than
+	sending an empty "0 errors" email every single day.
+
+	Gated by the same "Aktifkan Alert API Down" toggle as the orchestrator's
+	down-streak alert - one on/off switch for every OtoBitz error email,
+	rather than a second setting nobody remembers to also flip."""
+	if not cint(frappe.db.get_single_value("OtoBitz Settings", "enable_down_alert")):
+		return
+
+	since = add_days(frappe.utils.now_datetime(), -1)
+	grouped = get_failed_sync_grouped(since)
+	if not grouped:
+		return
+
+	recipients = frappe.get_all("Has Role", filters={"role": "System Manager", "parenttype": "User"}, pluck="parent")
+	recipients = frappe.get_all(
+		"User", filters={"name": ["in", recipients], "enabled": 1, "user_type": "System User"}, pluck="email"
+	)
+	if not recipients:
+		return
+
+	total = int(sum(r["cnt"] for r in grouped))
+	stats_html = stat_strip(
+		[
+			(str(total), "Total Record", TONE_INFO),
+			(str(len(grouped)), "Kategori", TONE_INFO),
+		]
+	)
+	body = f"""
+		<p style="margin:0 0 16px;">Rekap 24 jam terakhir: record yang gagal sync dan masuk
+		ke antrian retry &ldquo;OtoBitz Failed Sync&rdquo;, dikelompokkan per jenis error di bawah.</p>
+		{stats_html}
+		{failed_sync_breakdown_html(grouped)}
+		<p style="color:#94a3b8;font-size:11.5px;margin-top:20px;">
+			Semua record ini sudah otomatis dicoba retry di sync berikutnya - email ini cuma buat
+			kelihatan polanya, gak perlu tindakan manual kecuali jumlahnya terus menumpuk.
+		</p>
+	"""
+	message = email_wrapper(
+		title="OtoBitz Sync - Rekap Error Harian",
+		subtitle=f"{total} record &middot; {len(grouped)} kategori",
+		tone=TONE_INFO,
+		body_html=body,
+	)
+	try:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=f"OtoBitz sync: rekap {total} error harian ({len(grouped)} kategori)",
+			message=message,
+			now=True,
+		)
+	except Exception:
+		frappe.log_error(title="OtoBitz: failed to send daily failed-sync digest email")
