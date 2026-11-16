@@ -21,10 +21,21 @@ import functools
 import time
 
 import frappe
-from frappe.utils import cint, getdate, nowdate, now_datetime
+from frappe.utils import add_to_date, cint, flt, getdate, nowdate, now_datetime
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError
 from otobitz_integration.otobitz_integration.sync.common import acquire_sync_lock, release_sync_lock, renew_sync_lock
+from otobitz_integration.otobitz_integration.sync.notifications import (
+	TONE_DANGER,
+	TONE_INFO,
+	TONE_WARNING,
+	badge,
+	email_wrapper,
+	failed_sync_breakdown_html,
+	get_failed_sync_grouped,
+	section_heading,
+	stat_strip,
+)
 from otobitz_integration.otobitz_integration.sync.sync_booking import sync_booking
 from otobitz_integration.otobitz_integration.sync.sync_cogsparts import sync_cogsparts
 from otobitz_integration.otobitz_integration.sync.sync_orderparts import sync_orderparts
@@ -276,7 +287,11 @@ def _run_all_steps(steps=None):
 def _notify_failures(problem_logs: list, failure_streak: int | None = None) -> None:
 	"""Email System Manager users a summary when a run finishes with any
 	Partial/Failed endpoint, instead of that only being visible to whoever
-	happens to open OtoBitz Sync Log."""
+	happens to open OtoBitz Sync Log. Also pulls in a category breakdown of
+	whatever's sitting in "OtoBitz Failed Sync" from roughly the same window
+	- per-record data/validation failures that otherwise never surface
+	anywhere outside that list, even though they're exactly the kind of
+	thing worth knowing about at the same time as a connectivity alert."""
 	recipients = frappe.get_all(
 		"Has Role",
 		filters={"role": "System Manager", "parenttype": "User"},
@@ -290,28 +305,63 @@ def _notify_failures(problem_logs: list, failure_streak: int | None = None) -> N
 	if not recipients:
 		return
 
-	rows = "".join(
-		f"<tr><td>{log.endpoint}</td><td>{log.status}</td>"
-		f"<td>{log.records_failed}</td><td>{(log.traceback or '')[:200]}</td></tr>"
+	tone = TONE_DANGER if failure_streak else TONE_WARNING
+	endpoint_rows = "".join(
+		f"""<tr>
+			<td style="padding:8px 10px 8px 0;border-bottom:1px solid #edf2f7;font-weight:600;color:#1e293b;">{log.endpoint}</td>
+			<td style="padding:8px 10px;border-bottom:1px solid #edf2f7;">
+				{badge(log.status, TONE_DANGER if log.status == "Failed" else TONE_WARNING)}
+			</td>
+			<td style="padding:8px 10px;border-bottom:1px solid #edf2f7;text-align:right;color:#64748b;">{log.records_failed}</td>
+			<td style="padding:8px 0 8px 10px;border-bottom:1px solid #edf2f7;color:#94a3b8;font-size:11.5px;">
+				{frappe.utils.escape_html((log.traceback or "")[:160])}
+			</td>
+		</tr>"""
 		for log in problem_logs
 	)
-	streak_line = (
-		f"<p><b>{failure_streak} sync run berturut-turut</b> gagal/partial - kemungkinan OtoBitz API sedang down.</p>"
-		if failure_streak
-		else ""
-	)
-	message = f"""
-		{streak_line}
-		<p>Run OtoBitz sync terbaru selesai dengan {len(problem_logs)} endpoint yang
-		tidak sepenuhnya sukses:</p>
-		<table border="1" cellpadding="4" style="border-collapse: collapse;">
-			<tr><th>Endpoint</th><th>Status</th><th>Records Failed</th><th>Error</th></tr>
-			{rows}
+	endpoint_table = f"""
+		{section_heading("Ringkasan Endpoint")}
+		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:12.5px;">
+			<tr style="color:#94a3b8;text-align:left;">
+				<th style="padding:0 10px 8px 0;font-weight:600;">Endpoint</th><th style="padding:0 10px 8px;font-weight:600;">Status</th>
+				<th style="padding:0 10px 8px;text-align:right;font-weight:600;">Gagal</th><th style="padding:0 0 8px 10px;font-weight:600;">Error</th>
+			</tr>
+			{endpoint_rows}
 		</table>
-		<p>Cek list "OtoBitz Sync Log" di Desk untuk detail lengkap. Alert ini otomatis
-		reset begitu ada 1 run yang sukses penuh lagi, dan baru kirim lagi kalau
-		terjadi down-streak baru.</p>
 	"""
+
+	since = add_to_date(now_datetime(), hours=-24)
+	grouped_failures = get_failed_sync_grouped(since)
+	failed_sync_section = failed_sync_breakdown_html(grouped_failures)
+
+	stats = [(f"{failure_streak}x", "Berturut-turut", TONE_DANGER)] if failure_streak else []
+	stats.append((str(len(problem_logs)), "Endpoint Bermasalah", tone))
+	if grouped_failures:
+		stats.append((str(int(sum(flt(r["cnt"]) for r in grouped_failures))), "Error Tercatat", TONE_INFO))
+	stats_html = stat_strip(stats)
+
+	intro = (
+		"Beberapa sync jam-an berturut-turut gagal/partial - kemungkinan <b>OtoBitz API sedang down</b>."
+		if failure_streak
+		else "Run OtoBitz sync terbaru selesai dengan satu atau lebih endpoint yang tidak sepenuhnya sukses."
+	)
+
+	body = f"""
+		<p style="margin:0 0 16px;">{intro}</p>
+		{stats_html}
+		{endpoint_table}
+		{failed_sync_section}
+		<p style="color:#94a3b8;font-size:11.5px;margin-top:20px;">
+			Cek list &ldquo;OtoBitz Sync Log&rdquo; di Desk untuk detail lengkap. Alert ini otomatis reset
+			begitu ada 1 run yang sukses penuh lagi, dan baru kirim lagi kalau terjadi down-streak baru.
+		</p>
+	"""
+	message = email_wrapper(
+		title="OtoBitz Sync Alert" if failure_streak else "OtoBitz Sync - Endpoint Bermasalah",
+		subtitle="Kemungkinan API down" if failure_streak else "Perlu diperiksa",
+		tone=tone,
+		body_html=body,
+	)
 
 	subject = (
 		f"OtoBitz API kemungkinan down ({failure_streak}x gagal berturut-turut)"
