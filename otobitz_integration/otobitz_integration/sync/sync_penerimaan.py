@@ -31,6 +31,7 @@ system's own chart of accounts, not ours, and isn't something this sync can
 safely map on its own.
 """
 
+import time
 from collections import defaultdict
 
 import frappe
@@ -317,7 +318,14 @@ def backfill_split_penerimaan(from_date=None, to_date=None, dry_run=1) -> dict:
 		"details": [],
 	}
 
-	for chunk_start, chunk_end in _iter_date_chunks(from_date, to_date):
+	# See sync_booking.py's backfill_split_booking_advances() for why this
+	# pacing exists - hitting one endpoint repeatedly with zero delay got
+	# rate-limited hard enough in practice to look like a hang.
+	cooldown = frappe.db.get_single_value("OtoBitz Settings", "light_endpoint_cooldown_seconds") or 20
+
+	for chunk_index, (chunk_start, chunk_end) in enumerate(_iter_date_chunks(from_date, to_date)):
+		if chunk_index:
+			time.sleep(cooldown)
 		try:
 			response = call_api("penerimaanuang", {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
 		except OtoBitzAPIError as exc:
