@@ -139,12 +139,30 @@ class OtoBitzSettings(Document):
 		exists (OtoBitz correcting a WO's data after the fact, which the
 		regular sync never notices since it never re-checks an
 		already-existing Sales Order). Destructive - the Desk button this
-		backs confirms with the user first."""
+		backs confirms with the user first.
+
+		Always enqueued, developer_mode or not - same reasoning as
+		sync_now()'s docstring above: deleting the existing SO/SI/Payment
+		Entry (each with its own on_cancel hooks - GL reversal, COGS entry
+		cancellation) plus the fresh lookup_and_sync_wo() call plus a full
+		day's worth of penerimaanuang resync easily runs past gunicorn's
+		120s worker timeout when called synchronously from the Desk button
+		- confirmed live, the button returned "Request Timed Out" even
+		though a `bench execute` call to the same function worked fine."""
 		frappe.only_for("System Manager")
 
-		from otobitz_integration.otobitz_integration.sync.sync_service_orders import force_resync_wo
+		if not self.lookup_wo_number:
+			frappe.throw(frappe._("Enter a Work Order Number (nomorwo) first."))
 
-		return force_resync_wo(self.lookup_wo_number)
+		frappe.enqueue(
+			"otobitz_integration.otobitz_integration.sync.sync_service_orders.force_resync_wo",
+			queue="long",
+			timeout=3600,
+			job_id=f"otobitz_force_resync_{self.lookup_wo_number}",
+			deduplicate=True,
+			nomorwo=self.lookup_wo_number,
+		)
+		frappe.msgprint(frappe._("Force resync for {0} has been queued.").format(self.lookup_wo_number))
 
 	@frappe.whitelist()
 	def get_dashboard_summary(self):
