@@ -142,32 +142,16 @@ frappe.ui.form.on("OtoBitz Settings", {
 					[frm.doc.lookup_wo_number]
 				),
 				() => {
-					frappe.dom.freeze(__("Menghapus dan menarik ulang {0}...", [frm.doc.lookup_wo_number]));
-					frm.call("force_resync_wo")
-						.then((r) => {
-							frappe.dom.unfreeze();
-							const data = r.message;
-							if (!data || !data.found) {
-								frappe.msgprint(__("No Work Order found for that number."));
-								return;
-							}
-							const deleted = data.deleted || {};
-							let msg = "";
-							if (deleted.sales_order || deleted.sales_invoice || (deleted.payment_entries || []).length) {
-								msg += __("Dihapus: ") + [deleted.sales_order, deleted.sales_invoice, ...(deleted.payment_entries || [])].filter(Boolean).join(", ") + "<br>";
-							}
-							msg += __("Sales Order baru: {0}", [data.sales_order]);
-							if (data.sales_invoice) {
-								msg += "<br>" + __("Sales Invoice baru: {0}", [data.sales_invoice]);
-							}
-							if (data.payment_resync) {
-								msg += "<br>" + __("Payment resync: {0} dibuat, {1} di-update, {2} gagal", [
-									data.payment_resync.created, data.payment_resync.updated, data.payment_resync.failed,
-								]);
-							}
-							frappe.msgprint({ title: __("Selesai"), message: msg, indicator: "green" });
+					// Enqueued server-side (see force_resync_wo()'s own docstring) -
+					// deleting the old SO/SI/Payment Entry plus the fresh resync
+					// easily runs past gunicorn's own request timeout, so this
+					// can't wait for a result the way "Look Up Work Order" does.
+					frm.call("force_resync_wo").then(() =>
+						frappe.show_alert({
+							message: __("Sudah diantrikan - cek Sales Order/Sales Invoice {0} beberapa saat lagi.", [frm.doc.lookup_wo_number]),
+							indicator: "green",
 						})
-						.catch(() => frappe.dom.unfreeze());
+					);
 				}
 			);
 		});
