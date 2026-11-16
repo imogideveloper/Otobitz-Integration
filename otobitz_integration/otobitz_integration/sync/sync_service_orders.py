@@ -601,19 +601,43 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		# genuinely tiny qty (e.g. 0.001) that survives that check but still
 		# rounds down to 0 at the Qty field's 2-3 decimal precision once
 		# saved, tripping ERPNext's own "cannot be zero" validation on save.
+		#
+		# Forcing qty up to 1 while leaving the original per-unit rate in
+		# place multiplies that full per-unit price into this line's amount
+		# - wrong whether oto_subtotal is a genuine 0 (a free/bundled line,
+		# e.g. "Ganti Ban (2)" at qty 0/subtotal 0 - confirmed live on
+		# SO-106-261100126: forcing qty=1 at rate 198198 inflated net_total
+		# by the full 198198, which then showed up as a nonsense "Pembulatan
+		# -198197" instead of a real ~1 rupiah rounding, since the rounding
+		# is derived as grand_total - dpp - ppn and silently absorbed the
+		# whole error) or a tiny nonzero amount that just rounds down to 0
+		# qty. Pin the per-unit price to OtoBitz's own subtotal instead - at
+		# qty 1 that makes this line's amount exactly oto_subtotal (0 for a
+		# true free line) regardless of what the original rate implied.
 		if qty < 0.01:
 			qty = 1
-		elif rate and oto_subtotal and abs(qty * rate - oto_subtotal) > 1:
+			price_list_rate = oto_subtotal
+			discount_amount = 0
+			rate = oto_subtotal
+		elif rate and oto_subtotal and abs(qty * rate - oto_subtotal) > 0.01:
 			# subtotal is what OtoBitz actually billed for this line - trust
 			# it over their own (possibly rounded-for-display) qty, so this
 			# Sales Order's qty * rate always lands on the real amount
 			# instead of silently under/over-billing by the rounding gap.
-			# Gated to a >1 rupiah gap: OtoBitz's own qty is usually already
-			# precise enough that qty*rate lands within a few cents of
-			# subtotal on its own (plain float noise, not the 1/14-style
-			# rounded-for-display case this exists for) - recomputing qty
-			# for that would trade a clean "0.2" for an uglier "0.1999984"
-			# for zero practical benefit, confirmed live on SO-101-261100033.
+			# Gated to a >0.01 rupiah gap (was >1 rupiah) - OtoBitz rounds
+			# its own per-item subtotal to the nearest whole rupiah, so a
+			# genuine rounding gap can be anywhere up to 0.5 rupiah (e.g.
+			# SO-503-261100156: qty 0.18 * rate 198198 = 35675.64, OtoBitz's
+			# own subtotal is 35676 - a 0.36 gap that the old >1 threshold
+			# let straight through uncorrected, leaving net_total itself a
+			# few cents off a whole rupiah - which is what was showing up
+			# as a literal "Rp 0.70" fractional line in the posted Sales
+			# Invoice's own GL Round Off entry, not just an ugly number in
+			# the UI). Plain float noise (the 1/14-style case this >N gate
+			# originally existed for, confirmed live on SO-101-261100033) is
+			# several orders of magnitude smaller than that - well under
+			# 0.01 - so lowering the threshold this far still leaves an
+			# already-clean qty like "0.2" alone.
 			qty = oto_subtotal / rate
 		item_row = {
 			"item_code": item_code,
