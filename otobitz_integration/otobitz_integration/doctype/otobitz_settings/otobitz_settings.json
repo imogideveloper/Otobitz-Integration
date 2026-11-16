@@ -47,7 +47,12 @@
   "column_break_fix_customer_names",
   "fix_customer_names_to_date",
   "section_break_lookup",
-  "lookup_wo_number"
+  "lookup_wo_number",
+  "section_break_down_alert",
+  "enable_down_alert",
+  "down_alert_threshold",
+  "column_break_down_alert",
+  "consecutive_failure_count"
  ],
  "fields": [
   {
@@ -308,12 +313,44 @@
    "fieldname": "lookup_wo_number",
    "fieldtype": "Data",
    "label": "Work Order Number (nomorwo)"
+  },
+  {
+   "fieldname": "section_break_down_alert",
+   "fieldtype": "Section Break",
+   "label": "Notifikasi Email (API Down)"
+  },
+  {
+   "default": "0",
+   "description": "Kirim email ke semua System Manager kalau sync jam-an gagal/partial berturut-turut sejumlah Ambang Batas di sebelah kanan. Cuma kirim SEKALI pas pertama kali ambang batas tercapai (bukan tiap kali gagal setelahnya) - biar gak spam - dan otomatis reset begitu ada 1 sync yang sukses penuh lagi.",
+   "fieldname": "enable_down_alert",
+   "fieldtype": "Check",
+   "label": "Aktifkan Alert API Down"
+  },
+  {
+   "default": "3",
+   "depends_on": "enable_down_alert",
+   "description": "Jumlah run sync jam-an berturut-turut yang harus Partial/Failed sebelum email alert dikirim. Lebih tinggi = lebih toleran terhadap gangguan sesaat, lebih rendah = lebih cepat dapat notif tapi lebih gampang berisik.",
+   "fieldname": "down_alert_threshold",
+   "fieldtype": "Int",
+   "label": "Ambang Batas Gagal Berturut-turut",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_down_alert",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Reset otomatis ke 0 begitu ada sync yang sukses penuh.",
+   "fieldname": "consecutive_failure_count",
+   "fieldtype": "Int",
+   "label": "Jumlah Gagal Berturut-turut Saat Ini",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-29 00:00:00.000000",
+ "modified": "2026-11-16 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "OtoBitz Settings",

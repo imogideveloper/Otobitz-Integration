@@ -21,7 +21,7 @@ import functools
 import time
 
 import frappe
-from frappe.utils import getdate, nowdate, now_datetime
+from frappe.utils import cint, getdate, nowdate, now_datetime
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError
 from otobitz_integration.otobitz_integration.sync.common import acquire_sync_lock, release_sync_lock, renew_sync_lock
@@ -236,18 +236,44 @@ def _run_all_steps(steps=None):
 			time.sleep(cooldown)
 			renew_sync_lock()
 
+	# Consecutive-failure streak across RUNS (not endpoints within one run) -
+	# a fresh Success always resets it to 0; any Partial/Failed run bumps it
+	# by one. This is what "API down" alerting keys off, deliberately
+	# decoupled from problem_logs (which is per-endpoint, within one run):
+	# one endpoint having a bad day is normal and shouldn't page anyone by
+	# itself, only several *entire runs in a row* coming back bad should.
+	if overall_status == "Success":
+		failure_streak = 0
+	else:
+		failure_streak = (cint(settings.consecutive_failure_count) or 0) + 1
+
 	frappe.db.set_single_value(
 		"OtoBitz Settings",
-		{"last_sync_status": overall_status, "last_synced_on": now_datetime()},
+		{
+			"last_sync_status": overall_status,
+			"last_synced_on": now_datetime(),
+			"consecutive_failure_count": failure_streak,
+		},
 		update_modified=False,
 	)
 	frappe.db.commit()
 
 	if problem_logs:
-		_notify_failures(problem_logs)
+		# Re-fetch rather than reuse the `settings` loaded at the top of this
+		# function - someone may have flipped the toggle/threshold in the
+		# Desk while this run's ~30+ minutes of endpoint-by-endpoint cooldowns
+		# were still in progress.
+		alert_settings = frappe.get_single("OtoBitz Settings")
+		threshold = cint(alert_settings.down_alert_threshold) or 3
+		# Fires exactly once per down-streak - the run where the streak FIRST
+		# reaches the threshold, not every run after that too (which would
+		# otherwise re-send the same alert every 15 minutes for as long as
+		# OtoBitz stays down).
+		if alert_settings.enable_down_alert and failure_streak == threshold:
+			_notify_failures(problem_logs, failure_streak)
 
 
-def _notify_failures(problem_logs: list) -> None:
+def _notify_failures(problem_logs: list, failure_streak: int | None = None) -> None:
 	"""Email System Manager users a summary when a run finishes with any
 	Partial/Failed endpoint, instead of that only being visible to whoever
 	happens to open OtoBitz Sync Log."""
@@ -269,20 +295,33 @@ def _notify_failures(problem_logs: list) -> None:
 		f"<td>{log.records_failed}</td><td>{(log.traceback or '')[:200]}</td></tr>"
 		for log in problem_logs
 	)
+	streak_line = (
+		f"<p><b>{failure_streak} sync run berturut-turut</b> gagal/partial - kemungkinan OtoBitz API sedang down.</p>"
+		if failure_streak
+		else ""
+	)
 	message = f"""
-		<p>The hourly OtoBitz sync finished with {len(problem_logs)} endpoint(s)
-		not fully successful:</p>
+		{streak_line}
+		<p>Run OtoBitz sync terbaru selesai dengan {len(problem_logs)} endpoint yang
+		tidak sepenuhnya sukses:</p>
 		<table border="1" cellpadding="4" style="border-collapse: collapse;">
 			<tr><th>Endpoint</th><th>Status</th><th>Records Failed</th><th>Error</th></tr>
 			{rows}
 		</table>
-		<p>See the OtoBitz Sync Log list in the Desk for full details.</p>
+		<p>Cek list "OtoBitz Sync Log" di Desk untuk detail lengkap. Alert ini otomatis
+		reset begitu ada 1 run yang sukses penuh lagi, dan baru kirim lagi kalau
+		terjadi down-streak baru.</p>
 	"""
 
+	subject = (
+		f"OtoBitz API kemungkinan down ({failure_streak}x gagal berturut-turut)"
+		if failure_streak
+		else f"OtoBitz sync: {len(problem_logs)} endpoint(s) had issues"
+	)
 	try:
 		frappe.sendmail(
 			recipients=recipients,
-			subject=f"OtoBitz sync: {len(problem_logs)} endpoint(s) had issues",
+			subject=subject,
 			message=message,
 			now=True,
 		)
