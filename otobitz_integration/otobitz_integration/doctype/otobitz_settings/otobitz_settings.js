@@ -130,5 +130,46 @@ frappe.ui.form.on("OtoBitz Settings", {
 				})
 				.catch(() => frappe.dom.unfreeze());
 		});
+
+		frm.add_custom_button(__("Paksa Sync Ulang (Hapus Dulu)"), () => {
+			if (!frm.doc.lookup_wo_number) {
+				frappe.msgprint(__("Enter a Work Order Number (nomorwo) first."));
+				return;
+			}
+			frappe.confirm(
+				__(
+					"Ini akan MENGHAPUS Sales Order, Sales Invoice, dan Payment Entry yang sudah ada untuk Work Order {0}, lalu menarik ulang semuanya persis dari data OtoBitz saat ini. Pakai ini cuma kalau sudah yakin data yang tersimpan sekarang beda/stale dari OtoBitz - tidak bisa dibatalkan. Lanjutkan?",
+					[frm.doc.lookup_wo_number]
+				),
+				() => {
+					frappe.dom.freeze(__("Menghapus dan menarik ulang {0}...", [frm.doc.lookup_wo_number]));
+					frm.call("force_resync_wo")
+						.then((r) => {
+							frappe.dom.unfreeze();
+							const data = r.message;
+							if (!data || !data.found) {
+								frappe.msgprint(__("No Work Order found for that number."));
+								return;
+							}
+							const deleted = data.deleted || {};
+							let msg = "";
+							if (deleted.sales_order || deleted.sales_invoice || (deleted.payment_entries || []).length) {
+								msg += __("Dihapus: ") + [deleted.sales_order, deleted.sales_invoice, ...(deleted.payment_entries || [])].filter(Boolean).join(", ") + "<br>";
+							}
+							msg += __("Sales Order baru: {0}", [data.sales_order]);
+							if (data.sales_invoice) {
+								msg += "<br>" + __("Sales Invoice baru: {0}", [data.sales_invoice]);
+							}
+							if (data.payment_resync) {
+								msg += "<br>" + __("Payment resync: {0} dibuat, {1} di-update, {2} gagal", [
+									data.payment_resync.created, data.payment_resync.updated, data.payment_resync.failed,
+								]);
+							}
+							frappe.msgprint({ title: __("Selesai"), message: msg, indicator: "green" });
+						})
+						.catch(() => frappe.dom.unfreeze());
+				}
+			);
+		});
 	},
 });

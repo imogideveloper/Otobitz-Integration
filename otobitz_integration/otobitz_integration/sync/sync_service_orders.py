@@ -845,6 +845,81 @@ def lookup_and_sync_wo(nomorwo: str) -> dict:
 	}
 
 
+@frappe.whitelist()
+def force_resync_wo(nomorwo: str) -> dict:
+	"""Deletes whatever Sales Order/Sales Invoice/Payment Entry already
+	exist for this Work Order and re-syncs it completely fresh from
+	OtoBitz's CURRENT data - for when OtoBitz has corrected a WO's own
+	data (items/pricing) sometime AFTER it was first synced here, since
+	the regular sync never re-checks or updates an already-existing
+	Sales Order (`_sync_one_wo()`'s own `if existing_so: created = False`
+	skips recreation outright). Confirmed live on WO SO-003-261100109: it
+	stayed stuck at a stale Rp394,996 total forever, even though OtoBitz's
+	own current record for that same nomorwo now reports Rp115,000 (and
+	sisapiutang=0, fully paid) - the kind of after-the-fact correction
+	nothing in the regular hourly sync would ever notice or re-pull.
+
+	Unlike lookup_and_sync_wo() above (which only acts when nothing exists
+	yet), this is explicitly destructive - not safe to run blindly/on a
+	schedule. Meant for one specific WO an admin already has a concrete
+	reason to suspect is stale (a mismatch spotted by hand, same as this
+	one was), not a sweep."""
+	frappe.only_for("System Manager")
+	nomorwo = clean(nomorwo)
+	if not nomorwo:
+		frappe.throw("Enter a Work Order number (nomorwo).")
+
+	so_name = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
+	si_name = frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
+	deleted = {"sales_order": None, "sales_invoice": None, "payment_entries": []}
+
+	if si_name:
+		pe_names = frappe.get_all(
+			"Payment Entry Reference",
+			filters={"reference_doctype": "Sales Invoice", "reference_name": si_name},
+			pluck="parent",
+		)
+		for pe_name in set(pe_names):
+			pe = frappe.get_doc("Payment Entry", pe_name)
+			if pe.docstatus == 1:
+				pe.cancel()
+			frappe.delete_doc("Payment Entry", pe_name, ignore_permissions=True, force=True)
+			deleted["payment_entries"].append(pe_name)
+
+		si = frappe.get_doc("Sales Invoice", si_name)
+		if si.docstatus == 1:
+			si.cancel()
+		frappe.delete_doc("Sales Invoice", si_name, ignore_permissions=True, force=True)
+		deleted["sales_invoice"] = si_name
+
+	if so_name:
+		so = frappe.get_doc("Sales Order", so_name)
+		if so.docstatus == 1:
+			so.cancel()
+		frappe.delete_doc("Sales Order", so_name, ignore_permissions=True, force=True)
+		deleted["sales_order"] = so_name
+
+	frappe.db.commit()
+
+	result = lookup_and_sync_wo(nomorwo)
+
+	# Pick up this WO's own payment(s) too, scoped to just the fresh
+	# invoice's own date - not a full endpoint sweep, same lightweight
+	# one-off spirit as otoxpertsoandpartpernomor above.
+	payment_result = None
+	if result.get("sales_invoice"):
+		posting_date = frappe.db.get_value("Sales Invoice", result["sales_invoice"], "posting_date")
+		if posting_date:
+			from otobitz_integration.otobitz_integration.sync.sync_penerimaan import sync_penerimaan
+
+			payment_result = sync_penerimaan(date_range=(str(posting_date), str(posting_date)))
+	frappe.db.commit()
+
+	result["deleted"] = deleted
+	result["payment_resync"] = payment_result
+	return result
+
+
 def _link_if_exists(doctype: str, value) -> str | None:
 	value = clean(value)
 	if value and frappe.db.exists(doctype, value):

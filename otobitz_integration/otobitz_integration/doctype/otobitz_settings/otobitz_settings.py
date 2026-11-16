@@ -132,6 +132,21 @@ class OtoBitzSettings(Document):
 		return lookup_and_sync_wo(self.lookup_wo_number)
 
 	@frappe.whitelist()
+	def force_resync_wo(self):
+		"""Deletes and completely re-syncs whatever's currently in
+		`lookup_wo_number` from OtoBitz's current data - see
+		sync_service_orders.force_resync_wo()'s own docstring for why this
+		exists (OtoBitz correcting a WO's data after the fact, which the
+		regular sync never notices since it never re-checks an
+		already-existing Sales Order). Destructive - the Desk button this
+		backs confirms with the user first."""
+		frappe.only_for("System Manager")
+
+		from otobitz_integration.otobitz_integration.sync.sync_service_orders import force_resync_wo
+
+		return force_resync_wo(self.lookup_wo_number)
+
+	@frappe.whitelist()
 	def get_dashboard_summary(self):
 		"""Counts shown on the Settings form's "Ringkasan OtoBitz" section,
 		so admins can eyeball sync health without opening each list."""
