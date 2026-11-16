@@ -17,7 +17,9 @@
   "vehicle_color",
   "column_break_spec",
   "tahunpembuatan",
-  "last_odometer"
+  "last_odometer",
+  "section_break_owner_history",
+  "owner_history"
  ],
  "fields": [
   {
@@ -30,35 +32,38 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Nomor Rangka",
-   "read_only": 1,
+   "read_only_depends_on": "eval:!doc.__islocal",
    "reqd": 1,
    "unique": 1
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "nopolisi",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Nomor Polisi",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "nomesin",
    "fieldtype": "Data",
    "label": "Nomor Mesin",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "customer",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Customer",
    "options": "Customer",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "section_break_spesifikasi",
@@ -66,44 +71,62 @@
    "label": "Spesifikasi Kendaraan"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "vehicle_type",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Vehicle Type",
    "options": "OtoBitz Vehicle Type",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "vehicle_color",
    "fieldtype": "Link",
    "label": "Vehicle Color",
    "options": "OtoBitz Vehicle Color",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
    "fieldname": "column_break_spec",
    "fieldtype": "Column Break"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "tahunpembuatan",
    "fieldtype": "Data",
    "label": "Tahun Pembuatan",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
   },
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "last_odometer",
    "fieldtype": "Int",
    "label": "Last Odometer",
-   "read_only": 1
+   "read_only_depends_on": "eval:!doc.__islocal"
+  },
+  {
+   "fieldname": "section_break_owner_history",
+   "fieldtype": "Section Break",
+   "label": "Riwayat Pemilik"
+  },
+  {
+   "fieldname": "owner_history",
+   "fieldtype": "Table",
+   "label": "Riwayat Pemilik",
+   "options": "OtoBitz Vehicle Owner",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-30 00:00:00.000000",
+ "modified": "2026-11-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "OtoBitz Integration",
  "name": "OtoBitz Vehicle",
  "owner": "Administrator",
+ "quick_entry": 1,
  "permissions": [
   {
    "create": 1,
@@ -119,6 +142,9 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "nopolisi,customer",
+ "show_title_field_in_link": 1,
+ "title_field": "nopolisi",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []

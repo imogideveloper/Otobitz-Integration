@@ -23,7 +23,30 @@
 	const is_financial = (report) => REPORTS.includes(report.report_name);
 	// reports with the financial statements' filter form only (the auto_trust site has it on every query report);
 	// their table stays Frappe's own
-	const FILTER_ONLY = ["Custom Financial Statement", "General Ledger", "Customer Ledger Summary", "Supplier Ledger Summary"];
+	const FILTER_ONLY = [
+		"Custom Financial Statement",
+		"General Ledger",
+		"Customer Ledger Summary",
+		"Supplier Ledger Summary",
+		"Accounts Receivable",
+		"Accounts Payable",
+		"Accounts Receivable Summary",
+		"Accounts Payable Summary",
+		"Sales Register",
+		"Purchase Register",
+		"Item-wise Sales Register",
+		"Item-wise Purchase Register",
+		"Gross Profit",
+		"Sales Invoice Trends",
+		"Purchase Invoice Trends",
+		"Trial Balance for Party",
+		"Payment Period Based On Invoice Date",
+		"Sales Partners Commission",
+		"Customer Credit Balance",
+		"Sales Payment Summary",
+		"Address And Contacts",
+		"UAE VAT 201",
+	];
 	const has_filter_form = (report) => is_financial(report) || FILTER_ONLY.includes(report.report_name);
 
 	// the filters' order; the others after them, as the report has them
@@ -46,6 +69,70 @@
 		"report_template",
 	];
 	const LONG_SWITCH_LABEL = 180; // the right-hand column (240px) less its switch
+
+	// filters a report doesn't need here, hidden, as the auto_trust site (user, 2026-11-06): {report: [fieldname]}
+	const HIDDEN_FILTERS = {
+		"Accounts Receivable": [
+			"cost_center",
+			"finance_book",
+			"project",
+			"sales_person",
+			"party_account",
+			"payment_terms_template",
+			"territory",
+		],
+		// (the same as Accounts Receivable's; it has no Sales Person / Territory; party_account: Payable Account)
+		"Accounts Payable": ["cost_center", "finance_book", "project", "party_account", "payment_terms_template"],
+		// (its summary the same, as the auto_trust site)
+		"Accounts Receivable Summary": ["cost_center", "finance_book", "project", "sales_person", "payment_terms_template", "territory"],
+		"Accounts Payable Summary": ["cost_center", "finance_book", "project", "payment_terms_template"],
+	};
+
+	// a report's own order of its filters, before the general ORDER (the AR summary as Accounts Receivable)
+	const REPORT_ORDER = {
+		"Accounts Receivable Summary": ["company", "report_date", "party_type", "party", "ageing_based_on", "age_as_on", "range"],
+	};
+
+	// a switch put among the filters, under one of them: {report: {switch: the filter it goes under}} (user,
+	// 2026-11-06: Gross Profit's Include Returned Invoices under Sales Person)
+	const CHECK_UNDER = { "Gross Profit": { include_returned_invoices: "sales_person" } };
+
+	function checks_under(report, $form) {
+		const $box = $form.children(".oto-filter-fields");
+		for (const [check, under] of Object.entries(CHECK_UNDER[report.report_name] || {})) {
+			const control = $form.find(`.oto-filter-checks > .frappe-control[data-fieldname="${check}"]`).get(0);
+			if (!control || !$box.length) continue;
+			// (in a box of the switches' own class: their look, the switch first, comes with it)
+			const $cell = $('<div class="oto-filter-checks oto-check-cell"></div>').append(control);
+			$box.append($cell);
+			const place = () => {
+				const box = $box.get(0);
+				const columns = getComputedStyle(box).gridTemplateColumns.split(" ").filter(Boolean).length || 1;
+				const items = [...box.children].filter((el) => el !== $cell.get(0) && el.offsetParent && !el.classList.contains("oto-fin-tree"));
+				const i = items.findIndex((el) => el.dataset.fieldname === under);
+				// (the cell right under that filter, row and column; the filters after it, and the Level cell, flow
+				// round it)
+				$cell.css({
+					"grid-column": i < 0 ? "" : String((i % columns) + 1),
+					"grid-row": i < 0 ? "" : String(Math.floor(i / columns) + 2),
+				});
+			};
+			requestAnimationFrame(place);
+			new ResizeObserver(frappe.utils.debounce(place, 50)).observe($box.get(0));
+		}
+	}
+
+	// reports whose few switches go under the filters all the same, as their detailed reports' (AR / AP)
+	const CHECKS_BELOW = ["Accounts Receivable Summary", "Accounts Payable Summary", "Trial Balance for Party"];
+
+	function hide_filters(report) {
+		for (const fieldname of HIDDEN_FILTERS[report.report_name] || []) {
+			const filter = report.get_filter?.(fieldname);
+			if (!filter) continue;
+			filter.df.hidden = 1;
+			filter.refresh();
+		}
+	}
 
 	// reports whose switches under the filters go in so many columns (fewer only where their labels would not fit
 	// whole): the General Ledger's eleven in four, as the auto_trust site (user, 2026-11-06)
@@ -125,14 +212,16 @@
 			this.$collapse_button = $();
 			$holder.css({ display: "", "align-items": "", gap: "" });
 		}
+		hide_filters(this);
 		split_filters(this, $form);
 		arrange_filters(this, $form);
+		checks_under(this, $form);
 		// many switches (the Trial Balance's seven): a row of their own under the filters
 		const $checks = $form.find(".oto-filter-checks > .frappe-control").not(".hide-control, .hidden");
 		const long = $checks.get().some((el) => (el.querySelector(".label-area")?.scrollWidth || 0) > LONG_SWITCH_LABEL);
 		const few = $checks.length <= 4;
 		const columns = CHECK_COLUMNS[this.report_name];
-		const below = $checks.length > 4 || long || !!columns;
+		const below = $checks.length > 4 || long || !!columns || CHECKS_BELOW.includes(this.report_name);
 		$form.toggleClass("oto-fin-checks-below", below);
 		if (below)
 			rows_of_switches($form.children(".oto-filter-checks").get(0), columns ? Math.ceil($checks.length / columns) : few ? 1 : 2, !!columns);
@@ -199,9 +288,10 @@
 
 	function arrange_filters(report, $form) {
 		const $box = $form.children(".oto-filter-fields").length ? $form.children(".oto-filter-fields") : $form;
+		const order = REPORT_ORDER[report.report_name] || ORDER;
 		const rank = (el) => {
-			const i = ORDER.indexOf(el.dataset.fieldname);
-			return i < 0 ? ORDER.length : i;
+			const i = order.indexOf(el.dataset.fieldname);
+			return i < 0 ? order.length : i;
 		};
 		$box
 			.children(".frappe-control")
@@ -412,6 +502,18 @@
 		}
 		const box = report.$report?.get(0)?.clientWidth || report.page.main.width();
 		const room = box - RIGHT_ROOM - ROW_NUMBER;
+		// a report's text columns at most this share of the page (never below their header): a long account name
+		// (Receivable Account) kept from taking the width of several columns; cut, it shows whole on hover
+		const cap = TEXT_CAP[report.report_name];
+		if (cap) {
+			for (const c of columns) {
+				const most = Math.max(header_width[c.fieldname], Math.floor(room * cap));
+				if (!NUMERIC.includes(c.fieldtype) && c.width > most) {
+					c.width = most;
+					c._oto_compact = true;
+				}
+			}
+		}
 		const used = columns.reduce((sum, c) => sum + c.width, 0);
 		if (used < room) {
 			const extra = room - used;
@@ -446,12 +548,34 @@
 					c.width = width;
 				}
 			}
+			// still wider (a laptop screen, 1366 / 1536 wide: the amounts alone fill it): every column, Dr/Cr and
+			// the amounts too, capped at one width shared by all, so the widest give way first and the table never
+			// scrolls sideways (user, 2026-11-06); what is cut shows whole on hover
+			const total = columns.reduce((sum, c) => sum + c.width, 0);
+			if (total > room) {
+				const all_at = (level) => columns.reduce((sum, c) => sum + Math.max(MIN_COMPACT, Math.min(c.width, level)), 0);
+				let low = MIN_COMPACT;
+				let high = Math.max(...columns.map((c) => c.width));
+				while (high - low > 1) {
+					const mid = Math.floor((low + high) / 2);
+					if (all_at(mid) <= room) low = mid;
+					else high = mid;
+				}
+				for (const c of columns) {
+					const width = Math.max(MIN_COMPACT, Math.min(c.width, low));
+					if (width < c.width) c._oto_compact = true;
+					c.width = width;
+				}
+			}
 		}
 	}
 	// reports whose table fits the page's width, its long text columns narrowed rather than scrolled sideways
 	// (user, 2026-11-06: a long customer name widened prod's table past the screen)
 	const COMPACT = ["Customer Ledger Summary", "Supplier Ledger Summary"];
 	const NUMERIC = ["Currency", "Float", "Int", "Percent"];
+	const MIN_COMPACT = 40;
+	// {report: the share of the page a text column may take at most} (user, 2026-11-06: prod's Receivable Account)
+	const TEXT_CAP = { "Accounts Receivable": 0.16, "Accounts Payable": 0.16 };
 
 	// a cell cut all the same (past CONTENT_MAX): its whole text on hover
 	$(document).on("mouseover", "body.oto-fin-page #page-query-report .dt-cell__content", function () {

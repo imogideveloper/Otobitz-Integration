@@ -29,6 +29,7 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	log_failed_sync,
+	log_receipt_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
 	set_period_fields,
@@ -58,8 +59,8 @@ def _iter_date_chunks(start: str, end: str):
 		chunk_start = add_days(chunk_end, 1)
 
 
-def sync_penerimaan() -> dict:
-	tanggalawal, tanggalakhir = get_sync_window()
+def sync_penerimaan(date_range: tuple[str, str] | None = None) -> dict:
+	tanggalawal, tanggalakhir = date_range or get_sync_window()
 
 	fetched = created = updated = failed = 0
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
@@ -80,6 +81,10 @@ def sync_penerimaan() -> dict:
 			nomor = clean(row.get("nomor"))
 			if not nomor:
 				continue
+			# Raw archive, independent of whatever happens below - see
+			# log_receipt_detail_row()'s docstring in common.py.
+			log_receipt_detail_row("penerimaanuang", row)
+			frappe.db.commit()
 			try:
 				was_created = _sync_one_receipt(nomor, row)
 				created += was_created
@@ -98,7 +103,8 @@ def sync_penerimaan() -> dict:
 				frappe.db.commit()
 				failed += 1
 
-	frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
+	if date_range is None:
+		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}
@@ -119,8 +125,8 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
-	_create_payment_entry(nomor, row)
-	return True
+	pe_name = _create_payment_entry(nomor, row)
+	return bool(pe_name)
 
 
 def _resolve_sales_invoice(nofaktur: str) -> str | None:
@@ -147,17 +153,33 @@ def _resolve_sales_invoice(nofaktur: str) -> str | None:
 	return frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": so_detail[0][0]})
 
 
-def _create_payment_entry(nomor: str, row: dict) -> str:
+def _create_payment_entry(nomor: str, row: dict) -> str | None:
 	nofaktur = clean(row.get("noreferensi"))
 	si_name = nofaktur and _resolve_sales_invoice(nofaktur)
 	if not si_name:
 		frappe.throw(f"No Sales Invoice found for nofaktur {nofaktur!r} (receipt {nomor})")
 
+	amount = flt(row.get("nilaipenerimaan"))
+	if amount <= 0:
+		# Zero-amount rows exist for non-cash administrative entries from this
+		# same endpoint (e.g. "PENYELESAIAN PPH 23" tax-withholding
+		# settlements, keterangan-only) - no real money moved, so there's
+		# nothing to record; a no-op, not a failure.
+		return None
+
+	si_outstanding = flt(frappe.db.get_value("Sales Invoice", si_name, "outstanding_amount"))
+	if si_outstanding <= 0:
+		# The invoice is already fully settled - this row is a trivial
+		# residual/rounding receipt from OtoBitz's own side (seen as low as
+		# Rp 11) with nothing left to allocate against. Recording it would
+		# need a dedicated advance account (none configured on this Company),
+		# and it isn't real new money owed - skipped rather than guessed at.
+		return None
+
 	mode_of_payment = frappe.db.get_value(
 		"Mode of Payment", {"custom_otobitz_payment_code": clean(row.get("paymentmetode"))}
 	)
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(row.get("kode_cabang"))})
-	amount = flt(row.get("nilaipenerimaan"))
 
 	# Deliberately NOT passing party_amount=amount here: when nilaipenerimaan
 	# exceeds the invoice's real outstanding amount (cash rounding at the till
@@ -175,7 +197,6 @@ def _create_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
-	pe.custom_otobitz_endpoint = "penerimaanuang"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:

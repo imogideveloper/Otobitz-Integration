@@ -21,6 +21,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	create_purchase_order,
 	log_failed_sync,
+	log_po_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
 )
@@ -64,8 +65,8 @@ def _iter_date_chunks(start: str, end: str):
 		chunk_start = add_days(chunk_end, 1)
 
 
-def sync_orderpekerjaanluar() -> dict:
-	tanggalawal, tanggalakhir = get_sync_window()
+def sync_orderpekerjaanluar(date_range: tuple[str, str] | None = None) -> dict:
+	tanggalawal, tanggalakhir = date_range or get_sync_window()
 
 	fetched = created = updated = failed = 0
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
@@ -88,6 +89,10 @@ def sync_orderpekerjaanluar() -> dict:
 			nomor = clean(row.get("nomor"))
 			if not nomor:
 				continue
+			# Raw archive, independent of whatever happens below - see
+			# log_po_detail_row()'s docstring in common.py.
+			log_po_detail_row("masterdata_orderpekerjaanluar", nomor, row)
+			frappe.db.commit()
 			try:
 				was_created = _sync_one_order(nomor, row)
 				created += was_created
@@ -102,7 +107,8 @@ def sync_orderpekerjaanluar() -> dict:
 				frappe.db.commit()
 				failed += 1
 
-	frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
+	if date_range is None:
+		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}

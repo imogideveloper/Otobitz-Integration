@@ -26,8 +26,8 @@ required_apps = ["frappe/erpnext"]
 
 # include js, css files in header of desk.html
 app_include_css = [
-	"/assets/otobitz_integration/css/desk.css?v=15",
-	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=7",
+	"/assets/otobitz_integration/css/desk.css?v=17",
+	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=13",
 ]
 # The query string is a manual cache-buster: app_include_js isn't routed
 # through esbuild's content-hashed .bundle.js/assets.json manifest (that only
@@ -37,18 +37,20 @@ app_include_css = [
 # would ever show a change, and a plain refresh could still serve the stale
 # cached copy. Bump the v=N for a file every time that file changes.
 app_include_js = [
-	"/assets/otobitz_integration/js/otobitz_navbar.js?v=14",
+	"/assets/otobitz_integration/js/otobitz_navbar.js?v=17",
 	"/assets/otobitz_integration/js/otobitz_group_by.js?v=12",
 	"/assets/otobitz_integration/js/otobitz_favorites.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_list_page_length.js?v=1",
 	"/assets/otobitz_integration/js/otobitz_list_hscroll.js?v=1",
 	"/assets/otobitz_integration/js/otobitz_switch_check.js?v=8",
-	"/assets/otobitz_integration/js/otobitz_global_search.js?v=13",
-	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=10",
+	"/assets/otobitz_integration/js/otobitz_global_search.js?v=16",
+	"/assets/otobitz_integration/js/otobitz_report_financial.js?v=33",
 	"/assets/otobitz_integration/js/otobitz_grid_fit.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_link_all_options.js?v=1",
 	"/assets/otobitz_integration/js/vendor/html-to-image.js?v=1",
 	"/assets/otobitz_integration/js/otobitz_screenshot.js?v=2",
+	"/assets/otobitz_integration/js/otobitz_raw_data_view.js?v=2",
+	"/assets/otobitz_integration/js/otobitz_view_raw_json.js?v=3",
 ]
 
 # include js, css files in header of web template
@@ -167,25 +169,32 @@ after_app_install = "otobitz_integration.install.after_app_install"
 # Hook on document methods and events
 
 doc_events = {
+	"Customer": {
+		"before_insert": "otobitz_integration.customer_id.assign_manual_customer_id",
+	},
 	"Sales Order": {
-		"before_insert": "otobitz_integration.sales_order.set_next_service_date"
+		"before_insert": "otobitz_integration.sales_order.set_next_service_date",
+		"before_validate": "otobitz_integration.sales_order.set_default_payment_terms",
+		"validate": "otobitz_integration.uom_rounding.round_stock_qty",
 	},
 	"Sales Invoice": {
 		"autoname": "otobitz_integration.sales_invoice.set_branch_naming_series",
 		"before_validate": "otobitz_integration.sales_invoice.set_default_payment_terms",
 		"on_submit": [
+				"otobitz_integration.round_off_cost_center.follow_item_cost_center",
 				"otobitz_integration.sales_invoice.create_cogs_entry",
 				"otobitz_integration.sales_invoice.populate_journal_items"
 			],
 			"on_cancel": "otobitz_integration.sales_invoice.cancel_cogs_entry",
 		"validate": [
 			"otobitz_integration.sales_invoice.set_default_payment_reference",
-			"otobitz_integration.sales_invoice.set_default_accounting_date"
+			"otobitz_integration.sales_invoice.set_default_accounting_date",
+			"otobitz_integration.uom_rounding.round_stock_qty"
 		]
 	},
 	"Purchase Order": {
 		"autoname": "otobitz_integration.purchase_order.set_branch_naming_series",
-		"validate": "otobitz_integration.purchase_order.track",
+		"validate": ["otobitz_integration.purchase_order.track", "otobitz_integration.uom_rounding.round_stock_qty"],
 		"before_update_after_submit": "otobitz_integration.purchase_order.track",
 		"on_submit": "otobitz_integration.purchase_order.track_on_submit"
 	},
@@ -201,9 +210,10 @@ doc_events = {
 	},
 	"Purchase Invoice": {
 		"autoname": "otobitz_integration.purchase_invoice.set_branch_naming_series",
-		"validate": "otobitz_integration.purchase_invoice.track",
+		"validate": ["otobitz_integration.purchase_invoice.track", "otobitz_integration.uom_rounding.round_stock_qty"],
 		"before_update_after_submit": "otobitz_integration.purchase_invoice.track",
 		"on_submit": [
+			"otobitz_integration.round_off_cost_center.follow_item_cost_center",
 			"otobitz_integration.purchase_order.on_purchase_invoice",
 			"otobitz_integration.purchase_invoice.populate_journal_items"
 		],
@@ -215,9 +225,14 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
-	"hourly_long": [
-		"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_hourly_sync",
-	],
+	"cron": {
+		# checks every 15 min, but only actually triggers a sync once per
+		# hour listed in OtoBitz Settings' "Jam Sync" - see
+		# orchestrator.trigger_scheduled_sync()'s own docstring for why
+		"*/15 * * * *": [
+			"otobitz_integration.otobitz_integration.sync.orchestrator.trigger_scheduled_sync",
+		],
+	},
 	"daily": [
 		"otobitz_integration.otobitz_integration.sync.reconciliation.daily_reconciliation_check",
 	],

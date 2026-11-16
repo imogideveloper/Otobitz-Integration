@@ -12,6 +12,7 @@ whichever sync function encounters it.
 """
 
 import re
+from contextlib import contextmanager
 
 import frappe
 from erpnext.controllers.accounts_controller import get_taxes_and_charges
@@ -64,6 +65,55 @@ def release_sync_lock() -> None:
 	frappe.cache().delete_value(SYNC_LOCK_KEY)
 
 
+@contextmanager
+def sync_lock_guard(label: str = "manual operation"):
+	"""Use this in every one-off/manual script that creates or modifies
+	OtoBitz-synced documents (a backfill, a bulk retry, a bulk cleanup) -
+	it holds the exact same lock run_hourly_sync() itself respects (see
+	orchestrator.py's acquire_sync_lock() call), so the regular hourly sync
+	can never start while a manual operation is still running against the
+	same records.
+
+	This exists because of a real incident: a manual Jan-Sep cleanup script
+	that only called renew_sync_lock() (which just refreshes an existing
+	lock's TTL - it does NOT itself keep the scheduler out) ran at the same
+	time as the hourly sync, and both wrote to the same Sales
+	Invoices/Payment Entries concurrently - ERPNext's own optimistic-locking
+	check caught the collision as "(1020, Record has changed since last read
+	in table 'tabCompany')", which then cascaded into Sales Orders failing
+	to delete because their (still-present) Sales Invoice blocked it.
+
+	Raises instead of silently proceeding unprotected if the hourly sync
+	already holds the lock - a manual script that can't get exclusive access
+	should wait and retry, not run alongside the thing it would collide
+	with. Call renew_sync_lock() periodically from inside a long-running
+	loop in the `with` block, same as the hourly sync's own steps do, so the
+	lock's TTL doesn't lapse mid-operation."""
+	if not acquire_sync_lock():
+		frappe.throw(
+			f"OtoBitz hourly sync is currently running - can't start {label} until it finishes "
+			f"(lock expires after {SYNC_LOCK_TIMEOUT_SECONDS}s of inactivity either way). Try again shortly."
+		)
+	try:
+		yield
+	finally:
+		release_sync_lock()
+
+
+def sane_int(value, *, min_value: int, max_value: int) -> int | None:
+	"""Clamp-or-drop guard for numeric fields OtoBitz occasionally sends a
+	wildly implausible value for (a garbage odometer reading of 82391194093
+	km is the confirmed real example - see get_or_create_vehicle()). Returns
+	None (meaning: don't set this field at all) rather than guessing a
+	"corrected" value, so a bad upstream number never silently turns into a
+	different-but-still-wrong one - the field is just left blank, same
+	"don't guess, don't crash" stance as clean_or_none() elsewhere here."""
+	value = cint(value)
+	if min_value <= value <= max_value:
+		return value
+	return None
+
+
 def as_bool(value) -> int:
 	"""OtoBitz sends booleans as the strings "t"/"f" (raw Postgres booleans)."""
 	return 1 if str(value).strip().lower() in ("t", "true", "1") else 0
@@ -86,6 +136,40 @@ def clean_or_none(value) -> str | None:
 	no value."""
 	value = clean(value)
 	return None if value in _PLACEHOLDER_VALUES else value
+
+
+def looks_garbled(value) -> bool:
+	"""True if `value` has the shape OtoBitz's `nama` has occasionally sent
+	instead of a real customer name (confirmed on 9 live Customers on
+	2026-11-11: e.g. "q6. fF6 HAvd6 jTFbAAeA6" in place of "PT. HRC PRIMA
+	SEJAHTERA") - punctuation/word boundaries preserved, letters inside each
+	word randomized with digits mixed in. A real Indonesian person/company
+	name never mixes a letter and a digit within the same word, so that's
+	the cheap, reliable tell. Used to skip writing `nama` over an existing
+	customer_name rather than silently overwriting good data with this."""
+	value = clean(value)
+	if not value:
+		return False
+	return any(
+		any(c.isdigit() for c in word) and any(c.isalpha() for c in word) for word in value.split()
+	)
+
+
+_NPWP_RE = re.compile(r"^\d{2}\.\d{3}\.\d{3}\.\d-\d{3}\.\d{3}$")
+
+
+def valid_npwp_or_none(value) -> str | None:
+	"""clean_or_none(), and additionally drops anything not shaped like a
+	real NPWP (NN.NNN.NNN.N-NNN.NNN) - the same OtoBitz incident that
+	garbles `nama` (see looks_garbled()) garbles `npwp` the same way, e.g.
+	"nV.lB6.UqY.i-yzW.L2J" in place of "01.643.644.6-027.000": punctuation
+	kept, digits replaced with letters. A real NPWP is 15 digits in that
+	exact grouping, so anything else is rejected rather than written over
+	a good tax_id."""
+	value = clean_or_none(value)
+	if value is None or not _NPWP_RE.match(value):
+		return None
+	return value
 
 
 def clean_email(value) -> str | None:
@@ -303,12 +387,17 @@ def get_or_create_vehicle(
 	# garbage value nowhere near a real car's reading (e.g. 82391194093 km -
 	# likely a source-side data glitch, not a unit mixup) that overflows it
 	# and throws, taking down the whole Work Order sync over one cosmetic
-	# field. Dropped rather than stored if it's not a plausible odometer
-	# reading, same as clean_or_none's "don't guess, don't crash" approach
-	# elsewhere in this module.
-	odometer = cint(odometer)
-	if not (0 < odometer <= 9_999_999):
-		odometer = None
+	# field. A real car's odometer realistically never exceeds ~2,000,000 km
+	# (well past any passenger vehicle's practical lifetime), so anything
+	# beyond that is treated as garbage, not a very-high-mileage vehicle.
+	odometer = sane_int(odometer, min_value=1, max_value=2_000_000)
+
+	# tahunpembuatan (manufacture year) is stored as a Data field (not typed
+	# as Int, so it can't overflow a column the way odometer did), but the
+	# same class of garbage-value risk applies - bounded to a plausible
+	# range (no production car predates ~1970) rather than passed through
+	# unchecked.
+	tahun = sane_int(tahunpembuatan, min_value=1970, max_value=frappe.utils.now_datetime().year + 1)
 
 	values = {
 		"nopolisi": clean(nopolisi),
@@ -316,12 +405,17 @@ def get_or_create_vehicle(
 		"customer": customer,
 		"vehicle_type": vehicle_type,
 		"vehicle_color": vehicle_color,
-		"tahunpembuatan": clean(tahunpembuatan),
+		"tahunpembuatan": str(tahun) if tahun else None,
 		"last_odometer": odometer,
 	}
 	values = {k: v for k, v in values.items() if v is not None}
 
-	name, _, _ = upsert("OtoBitz Vehicle", {"norangka": norangka}, values, ignore_mandatory=True)
+	# any owner change this upsert makes is recorded in the vehicle's owner history as coming from the sync
+	frappe.flags.owner_source = "Sinkronisasi"
+	try:
+		name, _, _ = upsert("OtoBitz Vehicle", {"norangka": norangka}, values, ignore_mandatory=True)
+	finally:
+		frappe.flags.owner_source = None
 	return name
 
 
@@ -436,7 +530,7 @@ def create_purchase_order(
 	return po.name
 
 
-def log_so_detail_rows(rows: list[dict]) -> int:
+def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnondecrypt") -> int:
 	"""Archive every raw `otoxpertsoandpart` line item into `OtoBitz SO Detail`,
 	one row in, one row out - no grouping by `nomorwo`, no dependency on
 	whether the matching Sales Order/Invoice was actually created.
@@ -461,6 +555,7 @@ def log_so_detail_rows(rows: list[dict]) -> int:
 			continue
 		dedup_key = f"{nomorwo}|{kodereferensi}"
 		values = {
+			"endpoint": endpoint,
 			"nomorwo": nomorwo,
 			"nofaktur": clean(row.get("nofaktur")),
 			"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
@@ -489,6 +584,104 @@ def log_so_detail_rows(rows: list[dict]) -> int:
 		except Exception:
 			frappe.log_error(title=f"OtoBitz sync: failed to archive SO Detail row {dedup_key}")
 	return logged
+
+
+def log_receipt_detail_row(endpoint: str, row: dict) -> bool:
+	"""Archive a raw penerimaanuang/pengeluaranuang row into
+	`OtoBitz Receipt Detail`, independent of whether the Payment Entry/
+	Journal Entry built from it actually got created - same philosophy as
+	log_so_detail_rows() above. Dedup/upsert key is `endpoint|nomor` (OtoBitz
+	never reuses a receipt number across these two endpoints)."""
+	import json
+
+	nomor = clean(row.get("nomor"))
+	if not nomor:
+		return False
+	dedup_key = f"{endpoint}|{nomor}"
+	values = {
+		"endpoint": endpoint,
+		"nomor": nomor,
+		"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
+		"status": clean(row.get("status")),
+		"kode_cabang": clean(row.get("kode_cabang")),
+		"namacabang": clean(row.get("namacabang")),
+		"nilai": flt(row.get("nilaipenerimaan") or row.get("nilaipembayaran")),
+		"noreferensi": clean(row.get("noreferensi")),
+		"paymentmetode": clean(row.get("paymentmetode")),
+		"namasupplier": clean(row.get("namasupplier")),
+		"kodeaccount": clean(row.get("kodeaccount")),
+		"keterangan": clean(row.get("keterangan")) or clean(row.get("memo")),
+		"raw_data": json.dumps(row, default=str, ensure_ascii=False),
+	}
+	values = {k: v for k, v in values.items() if v is not None}
+	try:
+		upsert("OtoBitz Receipt Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+		return True
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to archive Receipt Detail row {dedup_key}")
+		return False
+
+
+def log_po_detail_row(endpoint: str, nomor: str, row: dict) -> bool:
+	"""Archive a raw masterdata_orderparts/masterdata_orderpekerjaanluar/
+	masterdata_oppnt order into `OtoBitz PO Detail`, one row per order -
+	unlike log_so_detail_rows() this is already keyed 1:1 with the Purchase
+	Order it builds (sync_orderparts.py/sync_orderpekerjaanluar.py/
+	sync_oppnt.py never group rows by anything), independent of whether
+	that Purchase Order actually gets created. Dedup/upsert key is
+	`endpoint|nomor`.
+
+	`sumber` is the TAM/Non TAM distinction derived straight from which
+	endpoint the row came from - masterdata_orderparts is the only one
+	that's an official TAM catalog purchase (supplier "PT. Toyota Astra
+	Motor" every time, confirmed live); the other two are both third-party/
+	non-TAM suppliers, just for parts (oppnt) vs labor (orderpekerjaanluar)."""
+	import json
+
+	if not nomor:
+		return False
+	dedup_key = f"{endpoint}|{nomor}"
+	detail = row.get("detail") or []
+	values = {
+		"endpoint": endpoint,
+		"sumber": "TAM" if endpoint == "masterdata_orderparts" else "Non TAM",
+		"nomor": nomor,
+		"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
+		"kode_cabang": clean(row.get("kodecabang")),
+		"kodesupplier": clean(row.get("kodesupplier")),
+		"nomor_so": clean(row.get("nomor_so")),
+		"item_count": len(detail),
+		"raw_data": json.dumps(row, default=str, ensure_ascii=False),
+	}
+	values = {k: v for k, v in values.items() if v is not None}
+	try:
+		upsert("OtoBitz PO Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+		return True
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to archive PO Detail row {dedup_key}")
+		return False
+
+
+@frappe.whitelist()
+def backfill_po_detail_sumber() -> dict:
+	"""One-off: `sumber` only started getting set by log_po_detail_row()
+	once this field existed - every OtoBitz PO Detail row archived before
+	that is stuck blank. Derived purely from each row's own `endpoint`
+	(same rule log_po_detail_row() uses), so this never needs the OtoBitz
+	API - a straight SQL-level backfill, not a per-row .save()."""
+	frappe.only_for("System Manager")
+	frappe.db.sql(
+		"""
+		update `tabOtoBitz PO Detail`
+		set sumber = case when endpoint = 'masterdata_orderparts' then 'TAM' else 'Non TAM' end
+		where ifnull(sumber, '') = ''
+		"""
+	)
+	fixed = frappe.db.sql(
+		"select count(*) from `tabOtoBitz PO Detail` where ifnull(sumber, '') != ''"
+	)[0][0]
+	frappe.db.commit()
+	return {"fixed": fixed}
 
 
 def get_or_create_uom(uom_name: str | None) -> str:

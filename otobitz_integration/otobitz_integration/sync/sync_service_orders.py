@@ -32,7 +32,7 @@ from collections import defaultdict
 import frappe
 from erpnext.controllers.accounts_controller import get_taxes_and_charges
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
-from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
+from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
@@ -46,6 +46,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	renew_sync_lock,
 	resolve_failed_sync,
 	safe_name,
+	sane_int,
 	set_period_fields,
 	sync_so_payment_status,
 	upsert,
@@ -55,6 +56,70 @@ TAXES_AND_CHARGES_TEMPLATE = "Sales Tax - O"
 # Per-line Item Tax Template (PPN 11%, account 2140313000) - only fills the
 # "Tax" column; skipped if it doesn't exist on this site.
 SALES_ITEM_TAX_TEMPLATE = "Inc PPN 11% - AIO"
+
+
+def _pin_oto_taxes(doc, header: dict, company: str) -> None:
+	"""Replace the template's percentage-computed PPN row with OtoBitz's own
+	ppn figure, and add its own rounding as a second row - without this,
+	ERPNext computes PPN as a single 11% pass over net_total (e.g.
+	768467 * 0.11 = 84531.37), while OtoBitz computes it per line item (each
+	individually rounded to the rupiah) then sums, plus its own cash-
+	rounding adjustment on the final total.
+
+	charge_type "Actual" is what makes this survive ERPNext's own
+	recalculation on insert/submit - rate-based rows get recomputed from
+	rate * net_total, "Actual" rows use tax_amount exactly as given."""
+	ppn = flt(header.get("ppn"))
+	if doc.taxes:
+		doc.taxes[0].charge_type = "Actual"
+		doc.taxes[0].tax_amount = ppn
+		# The template's own row description is written for a percentage-rate
+		# row (e.g. "PPN Keluaran @ 11.0") - keep it short and free of the "@"
+		# now that the row is pinned to an exact amount instead of a rate.
+		doc.taxes[0].description = "PPN 11%"
+
+	# header['rounding'] is NOT signed - it's the unsigned magnitude of the
+	# gap between dpp+ppn and grandtotal, and which direction it goes is a
+	# coin flip (confirmed live across 565 Work Orders: trusting the raw
+	# field as a straight addition was only right ~37% of the time - e.g.
+	# SO-503-261100149: dpp 621623 + ppn 68379 = 690002, but grandtotal is
+	# 690000, a step DOWN of 2, yet header['rounding'] is still just "2",
+	# with no sign). The actual correction is always exactly
+	# grandtotal - dpp - ppn - deriving it this way instead of trusting the
+	# field's sign is what makes doc.grand_total land on OtoBitz's own
+	# grandtotal in every case, not just the ones where it happens to add.
+	#
+	# dpp is summed fresh from doc.items here (qty * rate), NOT taken from
+	# header['dpp'] - calculate_taxes_and_totals() hasn't run yet at this
+	# point (called before doc.insert()), so doc.net_total itself is still
+	# stale/unset, but more importantly the two can genuinely disagree by a
+	# few cents: OtoBitz's own per-item subtotal is sometimes rounded to the
+	# nearest rupiah while the qty behind it isn't (confirmed live,
+	# SO-503-261100156: item JS0004 qty 0.18 * rate 198198 = 35675.64, but
+	# OtoBitz's own subtotal for that line is 35676 - a 0.36 gap too small
+	# to trip the >1 rupiah qty-correction above, since that exists for
+	# actual bad qty, not OtoBitz's own item-level rounding). Deriving the
+	# correction from the doc's own net total instead of header['dpp'] keeps
+	# doc.grand_total self-consistent (net_total + ppn + rounding always
+	# equals it) AND exactly equal to OtoBitz's own grandtotal regardless of
+	# which side of that gap is "rounder" - the Pembulatan figure absorbs
+	# whatever's left over instead of carrying a hidden 0.36 mismatch
+	# through to grand_total.
+	dpp = sum(flt(it.qty) * flt(it.rate) for it in doc.items)
+	grandtotal = flt(header.get("grandtotal"))
+	rounding = (grandtotal - dpp - ppn) if grandtotal else flt(header.get("rounding"))
+	if rounding:
+		round_off_account = frappe.db.get_value("Company", company, "round_off_account")
+		doc.append(
+			"taxes",
+			{
+				"charge_type": "Actual",
+				"account_head": round_off_account or (doc.taxes[0].account_head if doc.taxes else None),
+				"description": "Pembulatan",
+				"cost_center": doc.taxes[0].cost_center if doc.taxes else None,
+				"tax_amount": rounding,
+			},
+		)
 OVERLAP_DAYS = 3
 # A 2-day window took ~3 minutes and returned 1109 rows; a full-month window
 # (30 days) timed out every retry. Response time scales with the range, not
@@ -96,18 +161,70 @@ def _iter_date_chunks(start: str, end: str):
 		chunk_start = add_days(chunk_end, 1)
 
 
-def sync_service_orders() -> dict:
-	tanggalawal, tanggalakhir = get_sync_window()
+def _get_so_sync_config() -> tuple[str, str | None, bool]:
+	"""(primary_endpoint, fallback_endpoint_or_None, auto_fallback) straight
+	from OtoBitz Settings - see that doctype's "Konfigurasi Endpoint SO"
+	section. Lets ops switch which endpoint sync_service_orders() hits (or
+	turn on/off the automatic fallback) from the Desk, no code change or
+	restart needed, for exactly the scenario that forced the
+	otoxpertsoandpart -> otoxpertsoandpartnondecrypt switch in the first
+	place (the live endpoint going down/timing out under load)."""
+	settings = frappe.get_single("OtoBitz Settings")
+	primary = settings.so_sync_endpoint or "otoxpertsoandpartnondecrypt"
+	fallback = settings.so_sync_fallback_endpoint or None
+	auto_fallback = bool(settings.so_sync_auto_fallback)
+	if fallback == primary:
+		fallback = None
+	return primary, fallback, auto_fallback
+
+
+def _needs_customer_lookup(endpoint: str) -> bool:
+	"""Only a *nondecrypt* endpoint returns customer PII scrambled -
+	otoxpertsoandpart and otoxpertsoandpartpernomor both already return real
+	values directly, so resolving them again via datacustomerbynumber would
+	just be a wasted API call (worse: a lookup failure would silently
+	overwrite nothing since _decrypted_header() is skipped outright)."""
+	return "nondecrypt" in endpoint
+
+
+def sync_service_orders(date_range: tuple[str, str] | None = None) -> dict:
+	tanggalawal, tanggalakhir = date_range or get_sync_window()
+	primary_endpoint, fallback_endpoint, auto_fallback = _get_so_sync_config()
+
+	# One entry per OtoBitz customerid actually seen in this run, so a
+	# customer shared across many Work Orders (the common case) only costs
+	# one datacustomerbynumber call, not one per line item / per WO - see
+	# _resolve_customer_info()'s own docstring for why this call exists at
+	# all (otoxpertsoandpartnondecrypt returns nama/alamat/nohp/email/nik
+	# scrambled; this is how the real values get recovered).
+	customer_cache: dict = {}
 
 	fetched = created = updated = failed = archived = 0
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
 		renew_sync_lock()
+		endpoint_used = primary_endpoint
 		try:
-			response = call_api("otoxpertsoandpart", {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
+			response = call_api(primary_endpoint, {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
 		except OtoBitzAPIError:
-			frappe.log_error(title=f"OtoBitz sync: giving up on otoxpertsoandpart {chunk_start}..{chunk_end}")
-			failed += 1
-			continue
+			if not (auto_fallback and fallback_endpoint):
+				frappe.log_error(title=f"OtoBitz sync: giving up on {primary_endpoint} {chunk_start}..{chunk_end}")
+				failed += 1
+				continue
+			frappe.log_error(
+				title=f"OtoBitz sync: {primary_endpoint} down, falling back to {fallback_endpoint} for {chunk_start}..{chunk_end}"
+			)
+			try:
+				response = call_api(fallback_endpoint, {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
+				endpoint_used = fallback_endpoint
+			except OtoBitzAPIError:
+				frappe.log_error(
+					title=(
+						f"OtoBitz sync: giving up on both {primary_endpoint} and {fallback_endpoint} "
+						f"{chunk_start}..{chunk_end}"
+					)
+				)
+				failed += 1
+				continue
 
 		rows = response.get("data-so") or []
 		fetched += len(rows)
@@ -116,7 +233,7 @@ def sync_service_orders() -> dict:
 		# OtoBitz sent gets a row in OtoBitz SO Detail exactly as received, even
 		# one whose Work Order later gets skipped/cancelled/fails to sync as a
 		# real Sales Order - see log_so_detail_rows()'s docstring in common.py.
-		archived += log_so_detail_rows(rows)
+		archived += log_so_detail_rows(rows, endpoint=endpoint_used)
 		frappe.db.commit()
 
 		groups = defaultdict(list)
@@ -125,11 +242,12 @@ def sync_service_orders() -> dict:
 			if nomorwo:
 				groups[nomorwo].append(row)
 
+		needs_lookup = _needs_customer_lookup(endpoint_used)
 		for i, (nomorwo, wo_rows) in enumerate(groups.items()):
 			if i % 20 == 0:
 				renew_sync_lock()
 			try:
-				was_created = _sync_one_wo(nomorwo, wo_rows)
+				was_created = _sync_one_wo(nomorwo, wo_rows, customer_cache, endpoint_used, needs_lookup)
 				created += was_created
 				updated += not was_created
 				# Commit after every single WO, not per-chunk or at the very
@@ -154,18 +272,31 @@ def sync_service_orders() -> dict:
 				failed += 1
 
 		frappe.logger("otobitz_integration").info(
-			f"otoxpertsoandpart {chunk_start}..{chunk_end}: {len(rows)} rows, {len(groups)} Work Orders"
+			f"{endpoint_used} {chunk_start}..{chunk_end}: {len(rows)} rows, {len(groups)} Work Orders"
 		)
 
-	frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
+	if date_range is None:
+		frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed, "archived": archived}
 
 
-def _sync_one_wo(nomorwo: str, wo_rows: list) -> bool:
+def _sync_one_wo(
+	nomorwo: str,
+	wo_rows: list,
+	customer_cache: dict | None = None,
+	endpoint_name: str = "otoxpertsoandpartnondecrypt",
+	needs_customer_lookup: bool | None = None,
+) -> bool:
 	"""Returns True if a new Sales Order was created for this WO (False if it
-	already existed / only the Sales Invoice step ran)."""
+	already existed / only the Sales Invoice step ran). `endpoint_name` only
+	decides `needs_customer_lookup`'s default (_needs_customer_lookup(
+	endpoint_name) when not passed explicitly) - only a *nondecrypt*
+	endpoint's rows are worth running through _decrypted_header() at all."""
+	if needs_customer_lookup is None:
+		needs_customer_lookup = _needs_customer_lookup(endpoint_name)
+
 	header = wo_rows[0]
 	existing_so = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 
@@ -177,15 +308,50 @@ def _sync_one_wo(nomorwo: str, wo_rows: list) -> bool:
 	if existing_so:
 		created = False
 	else:
+		if needs_customer_lookup:
+			header = _decrypted_header(header, customer_cache if customer_cache is not None else {})
 		existing_so = _create_sales_order(nomorwo, header, wo_rows)
 		created = True
 
-	if (header.get("statuswo") or "").strip().upper() == "FAKTUR":
+	statuswo = (header.get("statuswo") or "").strip().upper()
+	if statuswo == "FAKTUR":
 		has_invoice = frappe.db.exists("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
 		if not has_invoice:
 			_create_sales_invoice(nomorwo, existing_so, header)
+	elif statuswo == "BATAL INVOICE":
+		_note_invoice_cancelled(existing_so, nomorwo, header)
 
 	return created
+
+
+def _note_invoice_cancelled(so_name: str, nomorwo: str, header: dict) -> None:
+	"""OtoBitz's own statuswo says this Work Order's invoice was voided
+	("BATAL INVOICE") - possibly pending a reissue under a new nofaktur (see
+	sync_penerimaan.py's _resolve_sales_invoice fallback, which already
+	handles that case on the payment side). There's no current invoice to
+	create here, but silently doing nothing leaves no trace that this WO was
+	even looked at - stamped as a comment on the Sales Order instead, so a
+	cancelled-and-not-yet-reissued invoice is visible directly on the record
+	rather than only inferable from an absence. Guarded so the same
+	cancellation doesn't get re-commented every sync cycle this WO's date
+	stays inside the rolling window."""
+	nofaktur = clean(header.get("nofaktur")) or nomorwo
+	marker = f"OtoBitz: invoice {nofaktur} berstatus BATAL INVOICE saat sync terakhir"
+	already_noted = frappe.db.exists(
+		"Comment",
+		{"reference_doctype": "Sales Order", "reference_name": so_name, "content": ["like", f"%{marker}%"]},
+	)
+	if already_noted:
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Comment",
+			"comment_type": "Info",
+			"reference_doctype": "Sales Order",
+			"reference_name": so_name,
+			"content": marker,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _cancel_wo_documents(so_name: str) -> None:
@@ -198,6 +364,64 @@ def _cancel_wo_documents(so_name: str) -> None:
 	so = frappe.get_doc("Sales Order", so_name)
 	if so.docstatus == 1:
 		so.cancel()
+
+
+def _resolve_customer_info(customerid: str, cache: dict) -> dict | None:
+	"""The real (decrypted) nama/alamat/nohp/email/nik for one OtoBitz
+	customer, via `datacustomerbynumber` - `otoxpertsoandpartnondecrypt`
+	returns those same fields scrambled on every row (confirmed live: e.g.
+	nama "0eVwYTg GEYEs9wW xvtK0V5" instead of the real name), apparently a
+	Thales-side decrypt step that stops returning usable data once too many
+	rows are requested in one call to the plain `otoxpertsoandpart` endpoint
+	- this is the suggested workaround: fetch undecrypted, then resolve each
+	customer's real details individually here.
+
+	Cached per customerid (passed in from sync_service_orders(), one dict for
+	the whole run) since the same customer repeats across many Work Orders -
+	calling this once per *row* would just recreate the "too much at once"
+	problem one call at a time instead of one request.
+
+	Returns None (not a throw) on a lookup miss/failure: _decrypted_header()
+	falls back to the WO row's own (scrambled) fields rather than failing
+	the whole Work Order over one customer lookup."""
+	if customerid in cache:
+		return cache[customerid]
+
+	lookup_endpoint = frappe.db.get_single_value("OtoBitz Settings", "customer_lookup_endpoint") or "datacustomerbynumber"
+
+	info = None
+	try:
+		response = call_api(lookup_endpoint, {"nomor": customerid})
+		rows = response.get("data-customer") or []
+		if rows:
+			info = rows[0]
+	except OtoBitzAPIError:
+		frappe.log_error(title=f"OtoBitz sync: {lookup_endpoint} failed for customerid {customerid}")
+
+	cache[customerid] = info
+	return info
+
+
+def _decrypted_header(header: dict, cache: dict) -> dict:
+	"""header with nama/alamat/nohp/email/nik replaced by the real values
+	from `datacustomerbynumber`, if a lookup for this customerid succeeds -
+	see _resolve_customer_info()'s docstring. Returns the original header
+	unchanged (still scrambled) when there's no customerid to look up with,
+	or the lookup itself comes back empty."""
+	customerid = clean(header.get("customerid"))
+	if not customerid:
+		return header
+
+	info = _resolve_customer_info(customerid, cache)
+	if not info:
+		return header
+
+	decrypted = dict(header)
+	for field in ("nama", "alamat", "nohp", "email", "nik", "npwp"):
+		value = info.get(field)
+		if value:
+			decrypted[field] = value
+	return decrypted
 
 
 def _resolve_customer(header: dict) -> str | None:
@@ -339,8 +563,8 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	# OtoBitz Vehicle's last_odometer (see get_or_create_vehicle()'s own
 	# comment), guarded the same way rather than crashing the whole WO sync
 	# over one cosmetic field.
-	odometer = cint(header.get("odemeter"))
-	if 0 < odometer <= 9_999_999:
+	odometer = sane_int(header.get("odemeter"), min_value=1, max_value=2_000_000)
+	if odometer:
 		so.custom_odometer = odometer
 
 	sales_item_tax_template = (
@@ -350,31 +574,68 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		item_code = clean(row.get("kodereferensi"))
 		if not item_code or not frappe.db.exists("Item", item_code):
 			continue
-		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
+		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Units"
 		# `harga` is the gross per-unit price and `discperitem` a per-unit
-		# discount - OtoBitz's own `subtotal` = qty * (harga - discperitem),
-		# confirmed against a real WO. `price_list_rate` must be set to the
-		# gross price for ERPNext to actually apply `discount_amount`
-		# (setting `rate` alone and leaving price_list_rate unset means the
-		# discount is silently ignored - this is what happened the first
-		# time: the ERPNext total came out higher than OtoBitz's).
+		# discount - OtoBitz's own `subtotal` usually equals qty * (harga -
+		# discperitem), but not always: confirmed live on ~6.5% of archived
+		# items (e.g. "Ganti Oli Mesin": qty 0.07 * harga 252252 = 17657.64,
+		# but OtoBitz's own subtotal says 18018 - the qty OtoBitz reports is
+		# rounded for display to 2-3 decimals; the real value feeding its own
+		# subtotal isn't, e.g. ~0.0714286 here). `price_list_rate` must be
+		# set to the gross price for ERPNext to actually apply
+		# `discount_amount` (setting `rate` alone and leaving
+		# price_list_rate unset means the discount is silently ignored -
+		# this is what happened the first time: the ERPNext total came out
+		# higher than OtoBitz's).
 		price_list_rate = flt(row.get("harga"))
 		discount_amount = flt(row.get("discperitem"))
+		rate = price_list_rate - discount_amount
 		qty = flt(row.get("qty"))
+		# OtoBitz's own subtotal/subtotalppn for this line - used below for
+		# the qty correction, and copied as-is onto custom_subtotal_ppn/
+		# custom_ppn_amount so those two columns need no client-side
+		# recomputation (and can't drift from what OtoBitz itself reports).
+		oto_subtotal = flt(row.get("subtotal"))
+		oto_subtotal_ppn = flt(row.get("subtotalppn"))
 		# `or 1` alone only catches a literal 0 - some OtoBitz rows carry a
 		# genuinely tiny qty (e.g. 0.001) that survives that check but still
 		# rounds down to 0 at the Qty field's 2-3 decimal precision once
 		# saved, tripping ERPNext's own "cannot be zero" validation on save.
 		if qty < 0.01:
 			qty = 1
+		elif rate and oto_subtotal and abs(qty * rate - oto_subtotal) > 1:
+			# subtotal is what OtoBitz actually billed for this line - trust
+			# it over their own (possibly rounded-for-display) qty, so this
+			# Sales Order's qty * rate always lands on the real amount
+			# instead of silently under/over-billing by the rounding gap.
+			# Gated to a >1 rupiah gap: OtoBitz's own qty is usually already
+			# precise enough that qty*rate lands within a few cents of
+			# subtotal on its own (plain float noise, not the 1/14-style
+			# rounded-for-display case this exists for) - recomputing qty
+			# for that would trade a clean "0.2" for an uglier "0.1999984"
+			# for zero practical benefit, confirmed live on SO-101-261100033.
+			qty = oto_subtotal / rate
 		item_row = {
 			"item_code": item_code,
 			"qty": qty,
 			"price_list_rate": price_list_rate,
 			"discount_amount": discount_amount,
-			"rate": price_list_rate - discount_amount,
+			"rate": rate,
 			"uom": stock_uom,
 			"conversion_factor": 1,
+			# All three straight from OtoBitz's own row rather than
+			# re-derived here: jenisdoc is OtoBitz's own Part/Jasa
+			# classification (no need to guess from the Item's item_group),
+			# and subtotal/subtotalppn are this line's own net/tax-inclusive
+			# amounts (confirmed per-item, not a WO-level total - see
+			# get_wo_summary() in otobitz_so_detail.py) - their difference is
+			# this line's own PPN amount, also exact since both sides of the
+			# subtraction are OtoBitz's own numbers, not a recomputed rate.
+			# Matches OtoBitz SO Detail's own Items table columns exactly,
+			# with no client-side recomputation needed.
+			"custom_jenis": "Jasa" if (row.get("jenisdoc") or "").strip().lower() == "jasa" else "Part",
+			"custom_subtotal_ppn": oto_subtotal_ppn,
+			"custom_ppn_amount": oto_subtotal_ppn - oto_subtotal if oto_subtotal_ppn else 0,
 		}
 		if item_cost_center:
 			item_row["cost_center"] = item_cost_center
@@ -395,6 +656,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	so.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
 	so.set("taxes", [])
 	so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+	_pin_oto_taxes(so, header, company)
 
 	so.insert(ignore_permissions=True, ignore_mandatory=True)
 	so.submit()
@@ -403,6 +665,24 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 
 def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si = make_sales_invoice(so_name, ignore_permissions=True)
+	# custom_jenis/custom_subtotal_ppn/custom_ppn_amount are no_copy=1 (so a
+	# user re-making an invoice by hand doesn't drag stale OtoBitz figures
+	# along) - get_mapped_doc() honours that and skips them too, so they
+	# need to be copied explicitly here. Matched by so_detail, the one
+	# field the mapper does set (field_map "name": "so_detail") that ties
+	# each invoice row back to the exact Sales Order Item it came from.
+	so_item_values = frappe.get_all(
+		"Sales Order Item",
+		filters={"parent": so_name},
+		fields=["name", "custom_jenis", "custom_subtotal_ppn", "custom_ppn_amount"],
+	)
+	so_item_by_name = {row.name: row for row in so_item_values}
+	for item in si.items:
+		src = so_item_by_name.get(item.so_detail)
+		if src:
+			item.custom_jenis = src.custom_jenis
+			item.custom_subtotal_ppn = src.custom_subtotal_ppn
+			item.custom_ppn_amount = src.custom_ppn_amount
 	si.update_stock = 0
 	si.custom_otobitz_wo_number = nomorwo
 	si.custom_otobitz_branch = frappe.db.get_value("Sales Order", so_name, "custom_otobitz_branch")
@@ -432,6 +712,7 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
 	si.set("taxes", [])
 	si.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+	_pin_oto_taxes(si, header, si.company)
 
 	si.insert(ignore_permissions=True, ignore_mandatory=True)
 	si.submit()
@@ -490,7 +771,7 @@ def lookup_and_sync_wo(nomorwo: str) -> dict:
 	if not rows:
 		return {"found": False, "nomorwo": nomorwo}
 
-	was_created = _sync_one_wo(nomorwo, rows)
+	was_created = _sync_one_wo(nomorwo, rows, {}, "otoxpertsoandpartpernomor")
 	frappe.db.commit()
 
 	return {
@@ -906,3 +1187,192 @@ def backfill_sales_invoice_payment_reference_and_dates() -> dict:
 
 	frappe.db.commit()
 	return {"checked": checked, "fixed": fixed}
+
+
+@frappe.whitelist()
+def backfill_customer_names(only_suspicious: int = 1) -> dict:
+	"""One-off/repeatable: _resolve_customer() only ever runs once per
+	Customer (at their first Work Order's sync) - a Customer whose
+	datacustomerbynumber lookup failed at that exact moment (client.py had
+	zero retries for OtoBitz's "Too Many Requests" response until this was
+	fixed - confirmed from Error Log: ~70% of lookups were failing this way)
+	is stuck with otoxpertsoandpartnondecrypt's scrambled nama/npwp forever,
+	since nothing ever re-resolves an already-existing Customer.
+
+	Re-resolves every OtoBitz-sourced Customer against datacustomerbynumber
+	again (now with the retry-with-backoff fix) and updates customer_name/
+	tax_id only when the lookup succeeds and the value actually changed -
+	safe to re-run anytime; a Customer whose name is already correct just
+	costs one no-op lookup. Can take a while for a large customer base (one
+	API call each, no bulk variant of this endpoint) - re-run it again later
+	for whatever didn't get through this time, same as any other backfill
+	here.
+
+	only_suspicious (default on) skips straight to the customers actually
+	worth re-checking instead of paying for one API call per OtoBitz
+	customer regardless of whether anything is wrong: every scrambled name
+	seen in practice ("x0WPqvFcy 3lsAaA4I", "0eVwYTg GEYEs9wW xvtK0V5") has a
+	digit embedded in what should be a plain name, which a real Indonesian
+	person/company name essentially never does - so `customer_name regexp
+	'[0-9]'` finds the handful actually broken instead of re-querying all
+	~970+ of them. Pass 0 for a full sweep (e.g. if a name is scrambled in a
+	way that happens to have no digit in it, this heuristic would miss it).
+
+	Also propagates the corrected customer_name onto every Sales Order/
+	Sales Invoice that still has the stale (scrambled) value cached on the
+	document itself - fixing the Customer master alone doesn't touch
+	already-created transactions, since customer_name there is its own
+	stored field (set once at creation, never re-fetched for an existing
+	document), not a live lookup. This is why "Customer" kept showing
+	scrambled names in the Sales Order list even right after a Customer's
+	name was corrected."""
+	frappe.only_for("System Manager")
+	import time
+
+	if int(only_suspicious):
+		customers = frappe.db.sql(
+			"""
+			select name, customer_name, tax_id, custom_otobitz_customer_id
+			from `tabCustomer`
+			where custom_otobitz_customer_id is not null
+				and custom_otobitz_customer_id != ''
+				and customer_name regexp '[0-9]'
+			""",
+			as_dict=True,
+		)
+	else:
+		customers = frappe.get_all(
+			"Customer",
+			filters={"custom_otobitz_customer_id": ["is", "set"]},
+			fields=["name", "customer_name", "tax_id", "custom_otobitz_customer_id"],
+		)
+	cache: dict = {}
+	checked = fixed = failed = 0
+	for i, cust in enumerate(customers):
+		if i % 20 == 0:
+			renew_sync_lock()
+		checked += 1
+		info = _resolve_customer_info(cust.custom_otobitz_customer_id, cache)
+		if not info:
+			failed += 1
+			continue
+
+		updates = {}
+		real_name = safe_name(info.get("nama"))
+		if real_name and real_name != cust.customer_name:
+			updates["customer_name"] = real_name
+		real_npwp = clean_or_none(info.get("npwp"))
+		if real_npwp and real_npwp != cust.tax_id:
+			updates["tax_id"] = real_npwp
+
+		if updates:
+			frappe.db.set_value("Customer", cust.name, updates, update_modified=False)
+			fixed += 1
+		frappe.db.commit()
+		time.sleep(0.2)
+
+	so_propagated = frappe.db.sql(
+		"""select count(*) from `tabSales Order` so join `tabCustomer` c on c.name = so.customer
+		where so.customer_name != c.customer_name"""
+	)[0][0]
+	si_propagated = frappe.db.sql(
+		"""select count(*) from `tabSales Invoice` si join `tabCustomer` c on c.name = si.customer
+		where si.customer_name != c.customer_name"""
+	)[0][0]
+	frappe.db.sql(
+		"""update `tabSales Order` so
+		join `tabCustomer` c on c.name = so.customer
+		set so.customer_name = c.customer_name
+		where so.customer_name != c.customer_name"""
+	)
+	frappe.db.sql(
+		"""update `tabSales Invoice` si
+		join `tabCustomer` c on c.name = si.customer
+		set si.customer_name = c.customer_name
+		where si.customer_name != c.customer_name"""
+	)
+	frappe.db.commit()
+
+	return {
+		"checked": checked,
+		"fixed": fixed,
+		"failed": failed,
+		"so_names_propagated": so_propagated,
+		"si_names_propagated": si_propagated,
+	}
+
+
+@frappe.whitelist()
+def backfill_customer_names_for_dates(from_date, to_date=None) -> dict:
+	"""Same fix as backfill_customer_names(), scoped to exactly the
+	customers who actually appear on a Sales Order/Sales Invoice within
+	[from_date, to_date] - for an admin who already knows a specific day
+	had a problem (noticed in the Desk, e.g. "tanggal 7") and wants it
+	fixed right now instead of waiting on the only_suspicious heuristic or
+	a full sweep of every OtoBitz customer. Still only costs one API call
+	per distinct customer in that window, same as the broader backfill."""
+	frappe.only_for("System Manager")
+	import time
+
+	to_date = to_date or from_date
+	customers = frappe.db.sql(
+		"""
+		select distinct c.name, c.customer_name, c.tax_id, c.custom_otobitz_customer_id
+		from `tabCustomer` c
+		where c.custom_otobitz_customer_id is not null
+			and c.custom_otobitz_customer_id != ''
+			and (
+				exists (
+					select 1 from `tabSales Order` so
+					where so.customer = c.name and so.transaction_date between %(from_date)s and %(to_date)s
+				)
+				or exists (
+					select 1 from `tabSales Invoice` si
+					where si.customer = c.name and si.posting_date between %(from_date)s and %(to_date)s
+				)
+			)
+		""",
+		{"from_date": from_date, "to_date": to_date},
+		as_dict=True,
+	)
+
+	cache: dict = {}
+	checked = fixed = failed = 0
+	for i, cust in enumerate(customers):
+		if i % 20 == 0:
+			renew_sync_lock()
+		checked += 1
+		info = _resolve_customer_info(cust.custom_otobitz_customer_id, cache)
+		if not info:
+			failed += 1
+			continue
+
+		updates = {}
+		real_name = safe_name(info.get("nama"))
+		if real_name and real_name != cust.customer_name:
+			updates["customer_name"] = real_name
+		real_npwp = clean_or_none(info.get("npwp"))
+		if real_npwp and real_npwp != cust.tax_id:
+			updates["tax_id"] = real_npwp
+
+		if updates:
+			frappe.db.set_value("Customer", cust.name, updates, update_modified=False)
+			fixed += 1
+		frappe.db.commit()
+		time.sleep(0.2)
+
+	frappe.db.sql(
+		"""update `tabSales Order` so
+		join `tabCustomer` c on c.name = so.customer
+		set so.customer_name = c.customer_name
+		where so.customer_name != c.customer_name"""
+	)
+	frappe.db.sql(
+		"""update `tabSales Invoice` si
+		join `tabCustomer` c on c.name = si.customer
+		set si.customer_name = c.customer_name
+		where si.customer_name != c.customer_name"""
+	)
+	frappe.db.commit()
+
+	return {"checked": checked, "fixed": fixed, "failed": failed}

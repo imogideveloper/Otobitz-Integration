@@ -37,6 +37,15 @@ MIN_TOKEN_CACHE_SECONDS = 30
 REQUEST_TIMEOUT = (10, 180)
 NETWORK_RETRIES = 3
 NETWORK_RETRY_DELAY_SECONDS = 5
+# "Too Many Requests" comes back as a 200 with data["error"] truthy, not an
+# HTTP 429 - confirmed live against masterdata_orderparts - so it's a
+# business-level OtoBitzAPIError, not a requests.exceptions network error,
+# and needs its own retry path (previously: zero retries, straight to
+# "give up" - the actual cause of most datacustomerbynumber lookups in
+# sync_service_orders.py silently failing and leaving Customer names
+# scrambled forever, since that lookup only ever runs once per customer).
+RATE_LIMIT_RETRIES = 4
+RATE_LIMIT_RETRY_DELAY_SECONDS = 20
 
 
 class OtoBitzAPIError(Exception):
@@ -88,6 +97,10 @@ def get_token(force_refresh: bool = False) -> str:
 	return token
 
 
+def _is_rate_limited(message: str) -> bool:
+	return "too many request" in (message or "").lower()
+
+
 def call_api(endpoint: str, payload: dict | None = None) -> dict:
 	"""POST to `/api/integration/{endpoint}` with a valid bearer token.
 
@@ -97,19 +110,34 @@ def call_api(endpoint: str, payload: dict | None = None) -> dict:
 
 	On a network-level failure (timeout, connection reset - the upstream API
 	has shown itself to be flaky, not just slow), retries a few times with a
-	short delay before giving up. This is every caller's only network retry
-	layer - individual sync functions (e.g. the Customer paginator) don't need
-	their own.
+	short delay before giving up. On a "Too Many Requests" response (a 200
+	with data["error"] set, not an HTTP 429), retries with a longer delay
+	instead - this is every caller's only retry layer for both cases,
+	individual sync functions (e.g. the Customer paginator,
+	_resolve_customer_info()) don't need their own. Any other OtoBitzAPIError
+	(a genuine business error - bad params, real auth failure, ...) is not
+	retryable and raises immediately.
 	"""
-	last_network_error: Exception | None = None
-	for attempt in range(1, NETWORK_RETRIES + 1):
+	last_error: Exception | None = None
+	network_attempt = 0
+	rate_limit_attempt = 0
+	while True:
 		try:
 			return _call_api_once(endpoint, payload)
 		except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
-			last_network_error = exc
-			if attempt < NETWORK_RETRIES:
-				time.sleep(NETWORK_RETRY_DELAY_SECONDS)
-	raise OtoBitzAPIError(f"Network error calling {endpoint} after {NETWORK_RETRIES} attempts") from last_network_error
+			last_error = exc
+			network_attempt += 1
+			if network_attempt >= NETWORK_RETRIES:
+				raise OtoBitzAPIError(f"Network error calling {endpoint} after {NETWORK_RETRIES} attempts") from last_error
+			time.sleep(NETWORK_RETRY_DELAY_SECONDS)
+		except OtoBitzAPIError as exc:
+			if not _is_rate_limited(str(exc)):
+				raise
+			last_error = exc
+			rate_limit_attempt += 1
+			if rate_limit_attempt >= RATE_LIMIT_RETRIES:
+				raise
+			time.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
 
 
 def _call_api_once(endpoint: str, payload: dict | None) -> dict:

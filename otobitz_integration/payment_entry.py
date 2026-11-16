@@ -8,7 +8,7 @@ HO_BRANCHES = ("HEAD OFFICE", "AIO HO OTOXPERT AUTO2000", "HO OTOXPERT AUTO2000"
 # "/", hence "BCA//". GOPAY QRIS is left out: its Odoo numbers carry a year
 # (GQRIS/2025/...) and it has no 2026 payments to match.
 BANK_JOURNAL_PREFIX = {
-	"1005102001": "BCA//",  # Bank BCA - 6591000729
+	"1005102001": "BCA/",   # Bank BCA - 6591000729 (single slash, per management)
 	"1005101001": "PMT/",   # Bank Permata - 00702442141
 	"1003104002": "UOB/",   # BANK UOB 2534
 }

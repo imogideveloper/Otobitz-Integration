@@ -75,46 +75,56 @@
 					],
 				},
 				{
+					// Arsip mentah penerimaanuang (1 baris = 1 transaksi persis
+					// dari API) - bukan doctype Payment Entry bawaan, sama
+					// alasannya dengan Sales Order (WO) di atas.
 					label: "Payment Entry",
 					icon: "credit-card",
-					doctype: "Payment Entry",
-					filters: { custom_otobitz_receipt_number: ["is", "set"] },
+					doctype: "OtoBitz Receipt Detail",
+					filters: { endpoint: "penerimaanuang" },
 					embed: true,
 					columns: [
-						["custom_otobitz_receipt_number", "Nomor Kwitansi"],
-						["posting_date", "Tanggal", "Date"],
-						["mode_of_payment", "Metode"],
-						["custom_otobitz_branch", "Cabang"],
-						["paid_to", "Akun Tujuan"],
-						["paid_amount", "Jumlah", "Currency"],
+						["nomor", "Nomor"],
+						["namacabang", "Cabang"],
+						["tanggal", "Tanggal", "Date"],
+						["status", "Status", "Status"],
+						["nilai", "Nilai", "Currency"],
 					],
 				},
 				{
+					// Arsip mentah pengeluaranuang - sama doctype dengan Payment
+					// Entry di atas (OtoBitz Receipt Detail menampung keduanya),
+					// dibedakan lewat endpoint, bukan doctype terpisah.
 					label: "Journal Entry (Setoran)",
 					icon: "banknote",
-					doctype: "Journal Entry",
-					filters: { custom_otobitz_receipt_number: ["is", "set"] },
+					doctype: "OtoBitz Receipt Detail",
+					filters: { endpoint: "pengeluaranuang" },
 					embed: true,
 					columns: [
-						["custom_otobitz_receipt_number", "Nomor Setoran"],
-						["posting_date", "Tanggal", "Date"],
-						["custom_otobitz_branch", "Cabang"],
-						["total_debit", "Total", "Currency"],
+						["nomor", "Nomor"],
+						["namacabang", "Cabang"],
+						["tanggal", "Tanggal", "Date"],
+						["status", "Status", "Status"],
+						["nilai", "Nilai", "Currency"],
 					],
 				},
 				{
+					// Arsip mentah masterdata_orderparts + masterdata_orderpekerjaanluar +
+					// masterdata_oppnt (1 baris = 1 order lengkap, header + semua detailnya) -
+					// bukan doctype Purchase Order bawaan, sama alasannya dengan
+					// Sales Order (WO) di atas.
 					label: "Purchase Order",
 					icon: "truck",
-					doctype: "Purchase Order",
-					filters: { custom_otobitz_order_number: ["is", "set"] },
+					doctype: "OtoBitz PO Detail",
+					filters: {},
 					embed: true,
 					columns: [
-						["custom_otobitz_order_number", "Nomor Order"],
-						["supplier", "Supplier"],
-						["custom_otobitz_branch", "Cabang"],
-						["transaction_date", "Tanggal", "Date"],
-						["status", "Status", "Status"],
-						["grand_total", "Total", "Currency"],
+						["sumber", "Sumber", "Status"],
+						["nomor", "Nomor Order"],
+						["kodesupplier", "Kode Supplier"],
+						["kode_cabang", "Cabang"],
+						["tanggal", "Tanggal", "Date"],
+						["item_count", "Jumlah Item"],
 					],
 				},
 			],
@@ -123,6 +133,7 @@
 			label: "Setup / Master Data",
 			icon: "sliders-horizontal",
 			items: [
+				{ label: "Vehicle", icon: "car", doctype: "OtoBitz Vehicle" },
 				{ label: "Vehicle Category", icon: "layout-grid", doctype: "OtoBitz Vehicle Category" },
 				{ label: "Vehicle Type", icon: "car", doctype: "OtoBitz Vehicle Type" },
 				{ label: "Vehicle Color", icon: "palette", doctype: "OtoBitz Vehicle Color" },
@@ -155,6 +166,10 @@
 	// "FAKTUR", plus ERPNext's native Draft/Submitted/Paid/Overdue/...) -
 	// falls back to gray for anything unrecognized rather than guessing.
 	const STATUS_COLORS = [
+		// Checked before the plain "tam" rule below, otherwise "Non TAM"
+		// would match /\btam\b/ too and both render the same color.
+		[/non\s*tam/, "orange"],
+		[/^tam$/, "green"],
 		[/cancel/, "red"],
 		[/overdue|unpaid|failed|reject/, "red"],
 		[/draft/, "gray"],

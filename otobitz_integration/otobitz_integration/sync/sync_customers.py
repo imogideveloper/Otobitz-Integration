@@ -9,8 +9,11 @@ case the centralized `call_api()` token refresh in api/client.py exists for.
 
 A customer can own more than one vehicle in the source system (several rows
 share the same `idcustomer`); Phase 1 keeps one ERPNext Customer per
-`idcustomer` and the vehicle custom fields simply reflect whichever row was
-seen last in the page walk (documented limitation, not a bug).
+`idcustomer`. This sync used to also cache "whichever vehicle was seen last"
+onto a handful of custom_otobitz_* fields on Customer itself, but that was
+pure duplication of OtoBitz Vehicle (kept properly up to date per-vehicle,
+keyed by norangka, via common.get_or_create_vehicle() on every Work Order) -
+those fields are now hidden on the Customer form and no longer written here.
 
 `datacustomerbynumber` (single-customer lookup by number) is a different,
 on-demand endpoint and is not part of this bulk sync - deferred to Phase 2.
@@ -22,9 +25,11 @@ from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, 
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	clean_or_none,
+	looks_garbled,
 	renew_sync_lock,
 	safe_name,
 	upsert_safe,
+	valid_npwp_or_none,
 )
 
 PAGE_SIZE = 200
@@ -58,28 +63,34 @@ def sync_customers() -> dict:
 			if not idcustomer:
 				continue
 
-			tax_id = clean_or_none(row.get("npwp"))
+			# OtoBitz has, for a small number of customers, sent `nama`/`npwp`
+			# replaced with masked/garbled text instead of the real value
+			# (confirmed incident 2026-11-11: 9 live Customers corrupted this
+			# way). looks_garbled()/valid_npwp_or_none() catch that shape and
+			# the row is treated as if the field were absent, rather than
+			# overwriting a previously-good customer_name/tax_id with garbage.
+			name = safe_name(row.get("nama"))
+			# None here means "don't touch customer_name at all" (key left out
+			# of values below) - distinct from "" / falsy, which would still
+			# fall back to idcustomer.
+			customer_name = name or idcustomer
+			if name and looks_garbled(name):
+				frappe.log_error(title=f"OtoBitz sync: garbled nama skipped for {idcustomer}", message=name)
+				# Only fall back to idcustomer as the name for a brand-new
+				# customer - on an update this must stay unset so the
+				# existing good customer_name is left untouched.
+				customer_name = None if frappe.db.exists("Customer", {"custom_otobitz_customer_id": idcustomer}) else idcustomer
 
-			# Guard against a kodetipe/kodewarna the corresponding master sync
-			# hasn't (yet) created - a Link field would otherwise reject the
-			# whole row and abort this customer's upsert.
-			vehicle_type = clean(row.get("kodetipe"))
-			if vehicle_type and not frappe.db.exists("OtoBitz Vehicle Type", vehicle_type):
-				vehicle_type = None
-			vehicle_color = clean(row.get("kodewarna"))
-			if vehicle_color and not frappe.db.exists("OtoBitz Vehicle Color", vehicle_color):
-				vehicle_color = None
+			raw_npwp = row.get("npwp")
+			tax_id = valid_npwp_or_none(raw_npwp)
+			if clean_or_none(raw_npwp) and not tax_id:
+				frappe.log_error(title=f"OtoBitz sync: garbled/invalid npwp skipped for {idcustomer}", message=str(raw_npwp))
 
 			values = {
-				"customer_name": safe_name(row.get("nama")) or idcustomer,
+				"customer_name": customer_name,
 				"customer_type": "Individual" if (row.get("statuscustomer") or "").strip() == "Perorangan" else "Company",
 				"tax_id": tax_id,
 				"custom_otobitz_customer_id": idcustomer,
-				"custom_otobitz_nopolisi": clean(row.get("nopolisi")),
-				"custom_otobitz_norangka": clean(row.get("norangka")),
-				"custom_otobitz_nomesin": clean(row.get("nomesin")),
-				"custom_otobitz_vehicle_type": vehicle_type,
-				"custom_otobitz_vehicle_color": vehicle_color,
 			}
 			values = {k: v for k, v in values.items() if v is not None}
 

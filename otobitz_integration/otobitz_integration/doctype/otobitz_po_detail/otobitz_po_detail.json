@@ -1,0 +1,179 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-09 00:00:00.000000",
+ "description": "Arsip mentah 1:1 dari endpoint masterdata_orderparts, masterdata_orderpekerjaanluar, dan masterdata_oppnt (Purchase Order) - 1 baris di sini = 1 order persis seperti yang dikirim OtoBitz (header + seluruh baris detail-nya), terlepas dari Purchase Order yang dibangun darinya berhasil dibuat atau tidak.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "dedup_key",
+  "po_summary_html",
+  "section_break_main",
+  "endpoint",
+  "sumber",
+  "nomor",
+  "tanggal",
+  "column_break_main",
+  "kode_cabang",
+  "kodesupplier",
+  "nomor_so",
+  "item_count",
+  "section_break_raw",
+  "raw_data_view",
+  "raw_data",
+  "raw_data_table"
+ ],
+ "fields": [
+  {
+   "fieldname": "dedup_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Dedup Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "po_summary_html",
+   "fieldtype": "HTML",
+   "label": "Ringkasan Order"
+  },
+  {
+   "fieldname": "section_break_main",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "endpoint",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Endpoint",
+   "options": "masterdata_orderparts\nmasterdata_orderpekerjaanluar\nmasterdata_oppnt",
+   "read_only": 1
+  },
+  {
+   "description": "TAM = masterdata_orderparts (part resmi dari PT. Toyota Astra Motor). Non TAM = masterdata_orderpekerjaanluar/masterdata_oppnt (jasa/part dari supplier pihak ketiga, bukan katalog resmi TAM).",
+   "fieldname": "sumber",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Sumber",
+   "options": "TAM\nNon TAM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nomor",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Nomor Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tanggal",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tanggal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "kode_cabang",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Kode Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "kodesupplier",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Kode Supplier",
+   "read_only": 1
+  },
+  {
+   "description": "Diisi untuk baris masterdata_orderpekerjaanluar - nomor Work Order Sales Order yang jadi sumber biaya ini.",
+   "fieldname": "nomor_so",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Nomor SO Terkait",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_count",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Jumlah Baris Item",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_raw",
+   "fieldtype": "Section Break",
+   "label": "Data Mentah (JSON, persis dari API)"
+  },
+  {
+   "default": "JSON",
+   "fieldname": "raw_data_view",
+   "fieldtype": "Select",
+   "label": "Tampilan",
+   "no_copy": 1,
+   "options": "JSON\nTabel"
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view != \"Tabel\"",
+   "fieldname": "raw_data",
+   "fieldtype": "Code",
+   "label": "Raw Data",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view == \"Tabel\"",
+   "fieldname": "raw_data_table",
+   "fieldtype": "HTML",
+   "label": "Raw Data (Tabel)"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz PO Detail",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "nomor",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "nomor",
+ "track_changes": 0
+}
