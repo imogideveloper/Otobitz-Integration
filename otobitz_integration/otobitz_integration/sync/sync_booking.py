@@ -10,6 +10,16 @@ yet. It's booked as a pure advance against the Customer (no `references`
 row); whoever reconciles it later links it to the eventual Sales Invoice by
 hand, the same way any other ERPNext customer advance gets used.
 
+One `nomor` (a single cash/QRIS receipt) can cover SEVERAL distinct
+bookings/vehicles at once, each its own row with the same `nomor` but a
+different `noreferensi` (confirmed live, nomor 003-IS261100103: 3 rows, one
+per vehicle plate, nilaipenerimaan 2575500/944350/2040000 - OtoBitz's own
+Odoo sync has the identical bug this fixes, where only one of the three ever
+shows up). `noreferensi` - not `nomor` - is therefore the real per-booking
+identity: dedup and `custom_otobitz_receipt_number` key off it, while `nomor`
+(the shared receipt) still lands on `reference_no` so every Payment Entry
+split off one receipt stays visibly grouped together.
+
 This endpoint also doesn't carry a customer id/code anywhere - only
 `namacustomer` as free text. Resolving the Customer is therefore a best-
 effort exact-name match against `customer_name`; a receipt whose name
@@ -20,7 +30,7 @@ used to create a new, likely-duplicate Customer record.
 
 import frappe
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_bank_cash_account
-from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
@@ -74,19 +84,26 @@ def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
 			if i % 20 == 0:
 				renew_sync_lock()
 			nomor = clean(row.get("nomor"))
-			if not nomor:
+			# noreferensi is the real per-booking identity (see module
+			# docstring) - nomor alone is shared by every allocation under
+			# the same receipt, so using it as the dedup key silently
+			# drops every allocation after the first. Falls back to nomor
+			# only for the rare row that has no noreferensi at all, rather
+			# than skipping it outright.
+			allocation_ref = clean(row.get("noreferensi")) or nomor
+			if not allocation_ref:
 				continue
 			try:
-				was_created = _sync_one_booking(nomor, row)
+				was_created = _sync_one_booking(allocation_ref, nomor, row)
 				created += was_created
 				updated += not was_created
 				frappe.db.commit()
-				resolve_failed_sync("penerimaanuangmukabooking", nomor)
+				resolve_failed_sync("penerimaanuangmukabooking", allocation_ref)
 				frappe.db.commit()
 			except Exception as exc:
 				frappe.db.rollback()
-				frappe.log_error(title=f"OtoBitz sync: failed to sync booking advance {nomor}")
-				log_failed_sync("penerimaanuangmukabooking", nomor, str(exc), row)
+				frappe.log_error(title=f"OtoBitz sync: failed to sync booking advance {allocation_ref}")
+				log_failed_sync("penerimaanuangmukabooking", allocation_ref, str(exc), row)
 				frappe.db.commit()
 				failed += 1
 
@@ -97,8 +114,8 @@ def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}
 
 
-def _sync_one_booking(nomor: str, row: dict) -> bool:
-	existing = frappe.db.get_value("Payment Entry", {"custom_otobitz_receipt_number": nomor})
+def _sync_one_booking(allocation_ref: str, nomor: str, row: dict) -> bool:
+	existing = frappe.db.get_value("Payment Entry", {"custom_otobitz_receipt_number": allocation_ref})
 
 	if (row.get("status") or "").strip().lower() == "batal":
 		if existing and frappe.db.get_value("Payment Entry", existing, "docstatus") == 1:
@@ -108,15 +125,15 @@ def _sync_one_booking(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
-	_create_advance_payment_entry(nomor, row)
+	_create_advance_payment_entry(allocation_ref, nomor, row)
 	return True
 
 
-def _create_advance_payment_entry(nomor: str, row: dict) -> str:
+def _create_advance_payment_entry(allocation_ref: str, nomor: str, row: dict) -> str:
 	customer_name = clean(row.get("namacustomer"))
 	customer = customer_name and frappe.db.get_value("Customer", {"customer_name": customer_name})
 	if not customer:
-		frappe.throw(f"No Customer found matching name {customer_name!r} (booking advance {nomor})")
+		frappe.throw(f"No Customer found matching name {customer_name!r} (booking advance {allocation_ref})")
 
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	mode_of_payment = frappe.db.get_value(
@@ -134,7 +151,10 @@ def _create_advance_payment_entry(nomor: str, row: dict) -> str:
 	set_period_fields(pe, pe.posting_date)
 	pe.paid_amount = amount
 	pe.received_amount = amount
-	pe.custom_otobitz_receipt_number = nomor
+	# The per-booking identity (see module docstring), NOT the shared
+	# receipt number - this is what makes dedup correct when one receipt
+	# covers several bookings.
+	pe.custom_otobitz_receipt_number = allocation_ref
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:
@@ -148,10 +168,134 @@ def _create_advance_payment_entry(nomor: str, row: dict) -> str:
 	# mandatory-field check - ignore_mandatory above doesn't cover it). Same
 	# fix as sync_penerimaan.py's _create_payment_entry() - this endpoint has
 	# no separate bank-transfer-reference field either, so the receipt's own
-	# number/date stand in for it.
+	# number/date stand in for it. Deliberately the shared `nomor`, not
+	# `allocation_ref` - every Payment Entry split off the same receipt
+	# carries the same reference_no, so they still show up grouped together
+	# even though each has its own custom_otobitz_receipt_number.
 	pe.reference_no = nomor
 	pe.reference_date = pe.posting_date
 
 	pe.insert(ignore_permissions=True, ignore_mandatory=True)
 	pe.submit()
 	return pe.name
+
+
+@frappe.whitelist()
+def backfill_split_booking_advances(from_date=None, to_date=None, dry_run=1) -> dict:
+	"""One-off repair for the bug fixed above: every receipt that already
+	synced BEFORE this fix only ever got ONE Payment Entry per `nomor` (the
+	first row `sync_booking()` happened to see), silently dropping every
+	other allocation under the same receipt - real money already received
+	that's missing from the books, not just a display/rounding gap, so
+	unlike most other OtoBitz data-quality findings this one is worth
+	correcting retroactively (see [[otobitz-no-retroactive-fix]]-style
+	findings for why that's normally NOT the default here).
+
+	dry_run=1 (default): reports what it WOULD do, writes nothing - review
+	this first. dry_run=0: actually creates the missing Payment Entries and
+	re-keys the one pre-fix entry (if any) from the old shared `nomor` to
+	its own correct `noreferensi`, so it stops being invisible to the new
+	dedup check.
+
+	The pre-fix entry never stored `noreferensi` at all, so it's matched to
+	one specific allocation row by party + posting_date + paid_amount -
+	first match wins, and each existing entry can only be claimed by one
+	row, so two allocations that happen to share an amount can't both grab
+	the same Payment Entry."""
+	frappe.only_for("System Manager")
+	dry_run = cint(dry_run)
+	from_date = str(getdate(from_date) if from_date else getdate("2026-09-01"))
+	to_date = str(getdate(to_date) if to_date else getdate(nowdate()))
+
+	report = {
+		"from_date": from_date,
+		"to_date": to_date,
+		"dry_run": bool(dry_run),
+		"receipts_with_split": 0,
+		"already_ok": 0,
+		"rekeyed": 0,
+		"created": 0,
+		"created_amount": 0.0,
+		"errors": [],
+		"details": [],
+	}
+
+	for chunk_start, chunk_end in _iter_date_chunks(from_date, to_date):
+		try:
+			response = call_api("penerimaanuangmukabooking", {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
+		except OtoBitzAPIError as exc:
+			report["errors"].append(f"{chunk_start}..{chunk_end}: {exc}")
+			continue
+
+		by_nomor: dict[str, list[dict]] = {}
+		for row in response.get("data-penerimaanbooking") or []:
+			nomor = clean(row.get("nomor"))
+			if nomor:
+				by_nomor.setdefault(nomor, []).append(row)
+
+		for nomor, group in by_nomor.items():
+			if len(group) < 2:
+				continue
+			report["receipts_with_split"] += 1
+			claimed = set()
+
+			for row in group:
+				allocation_ref = clean(row.get("noreferensi")) or nomor
+				amount = flt(row.get("nilaipenerimaan"))
+				customer_name = clean(row.get("namacustomer"))
+				customer = customer_name and frappe.db.get_value("Customer", {"customer_name": customer_name})
+				posting_date = getdate(row.get("tanggal"))
+
+				# Already correctly keyed - a post-fix sync run already handled this one.
+				if frappe.db.exists("Payment Entry", {"custom_otobitz_receipt_number": allocation_ref}):
+					report["already_ok"] += 1
+					continue
+
+				candidate = None
+				if customer:
+					matches = frappe.get_all(
+						"Payment Entry",
+						filters={
+							"custom_otobitz_receipt_number": nomor,
+							"party": customer,
+							"paid_amount": amount,
+							"posting_date": posting_date,
+						},
+						pluck="name",
+						limit=5,
+					)
+					candidate = next((m for m in matches if m not in claimed), None)
+
+				if candidate:
+					claimed.add(candidate)
+					report["details"].append(
+						{"nomor": nomor, "allocation_ref": allocation_ref, "action": "rekey", "pe": candidate, "amount": amount}
+					)
+					report["rekeyed"] += 1
+					if not dry_run:
+						frappe.db.set_value("Payment Entry", candidate, "custom_otobitz_receipt_number", allocation_ref)
+					continue
+
+				# Genuinely missing - this allocation never got a Payment Entry at all.
+				report["details"].append(
+					{
+						"nomor": nomor,
+						"allocation_ref": allocation_ref,
+						"action": "create",
+						"amount": amount,
+						"customer": customer_name,
+					}
+				)
+				report["created"] += 1
+				report["created_amount"] += amount
+				if not dry_run:
+					try:
+						_create_advance_payment_entry(allocation_ref, nomor, row)
+						frappe.db.commit()
+					except Exception as exc:
+						frappe.db.rollback()
+						report["errors"].append(f"{allocation_ref}: {exc}")
+
+	if not dry_run:
+		frappe.db.commit()
+	return report
