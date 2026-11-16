@@ -17,12 +17,17 @@ once, each its own row sharing that `nomor` but a different `noreferensi` -
 same bug class as sync_booking.py's penerimaanuangmukabooking: confirmed
 live, nomor 003-IS261100056 carried 2 rows (nofaktur SV-003-261100112 and
 SV-003-261100113, Rp115,000 each), and dedup keyed on `nomor` alone silently
-dropped the second payment entirely. Existence checks below key on BOTH
-`custom_otobitz_receipt_number` (the nofaktur/noreferensi this specific row
-settles) AND `reference_no` (the shared nomor) together - not noreferensi
-alone - so a genuine second installment against the SAME invoice under a
-DIFFERENT receipt still creates its own Payment Entry too, instead of
-trading one silent-drop bug for its mirror image.
+dropped the second payment entirely.
+
+`custom_otobitz_receipt_number` therefore stores `nofaktur` (the invoice
+this specific row settles), NOT the shared `nomor` - confirmed the hard way
+live: the field carries a UNIQUE database constraint, so a first attempt at
+storing the shared `nomor` here succeeds for whichever invoice is processed
+first, and every other invoice under the same receipt then fails outright
+with a duplicate-key IntegrityError on insert, not a dedup false-positive.
+`nomor` still lands on `reference_no` so every Payment Entry split off one
+receipt stays visibly grouped together, same as sync_booking.py's
+allocation_ref/nomor split.
 
 The paid-to account comes from the Mode of Payment's own configured default
 account for this Company (standard ERPNext setup under Mode of Payment >
@@ -134,10 +139,12 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	not updates, since OtoBitz payment receipts aren't expected to change
 	amount after the fact).
 
-	Resolves the Sales Invoice first, before the existence check, so that
-	check can key on (nomor, si_name) together rather than nomor alone - one
-	receipt settling several invoices at once (see module docstring) must
-	not have its second invoice's payment mistaken for the first's."""
+	Resolves the Sales Invoice first, before the existence check, so the
+	dedup key is `nofaktur` (unique per invoice) rather than `nomor` (shared
+	across every invoice one receipt settles - see module docstring for why
+	that was briefly tried and rejected: custom_otobitz_receipt_number has a
+	unique DB constraint, so it can only ever hold one value per column
+	regardless of dedup logic)."""
 	nofaktur = clean(row.get("noreferensi"))
 	si_name = nofaktur and _resolve_sales_invoice(nofaktur)
 	is_cancel = (row.get("status") or "").strip().lower() == "batal"
@@ -147,7 +154,7 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 			return False  # nothing to cancel if the invoice can't even be resolved
 		frappe.throw(f"No Sales Invoice found for nofaktur {nofaktur!r} (receipt {nomor})")
 
-	existing = _existing_payment_entry(nomor, si_name)
+	existing = _existing_payment_entry(nofaktur)
 
 	if is_cancel:
 		if existing and frappe.db.get_value("Payment Entry", existing, "docstatus") == 1:
@@ -157,25 +164,28 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
-	pe_name = _create_payment_entry(nomor, si_name, row)
+	pe_name = _create_payment_entry(nomor, si_name, nofaktur, row)
 	return bool(pe_name)
 
 
-def _existing_payment_entry(nomor: str, si_name: str) -> str | None:
-	"""A Payment Entry already synced for this exact (receipt, invoice) pair
-	- joined through Payment Entry Reference rather than matched on nomor
-	alone, since nomor is shared across every invoice one receipt settles."""
+def _existing_payment_entry(nofaktur: str) -> str | None:
+	return frappe.db.get_value("Payment Entry", {"custom_otobitz_receipt_number": nofaktur})
+
+
+def _find_pe_by_invoice_reference(si_name: str) -> str | None:
+	"""Any Payment Entry already linked to this invoice via its own Payment
+	Entry Reference row - used by the backfill to find a pre-fix entry
+	that's still keyed by the old shared `nomor` instead of the correct
+	per-invoice `nofaktur`, so it gets rekeyed instead of mistaken for
+	missing and recreated as a duplicate payment."""
 	rows = frappe.db.sql(
 		"""
-		select per.name
-		from `tabPayment Entry` per
-		inner join `tabPayment Entry Reference` ref on ref.parent = per.name
-		where per.custom_otobitz_receipt_number = %(nomor)s
-		  and ref.reference_doctype = 'Sales Invoice'
-		  and ref.reference_name = %(si_name)s
+		select ref.parent
+		from `tabPayment Entry Reference` ref
+		where ref.reference_doctype = 'Sales Invoice' and ref.reference_name = %(si_name)s
 		limit 1
 		""",
-		{"nomor": nomor, "si_name": si_name},
+		{"si_name": si_name},
 	)
 	return rows[0][0] if rows else None
 
@@ -204,7 +214,7 @@ def _resolve_sales_invoice(nofaktur: str) -> str | None:
 	return frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": so_detail[0][0]})
 
 
-def _create_payment_entry(nomor: str, si_name: str, row: dict) -> str | None:
+def _create_payment_entry(nomor: str, si_name: str, nofaktur: str, row: dict) -> str | None:
 	amount = flt(row.get("nilaipenerimaan"))
 	if amount <= 0:
 		# Zero-amount rows exist for non-cash administrative entries from this
@@ -242,7 +252,9 @@ def _create_payment_entry(nomor: str, si_name: str, row: dict) -> str | None:
 	set_period_fields(pe, pe.posting_date)
 	pe.paid_amount = amount
 	pe.received_amount = amount
-	pe.custom_otobitz_receipt_number = nomor
+	# nofaktur (unique per invoice), NOT the shared nomor - see module
+	# docstring and _sync_one_receipt()'s own docstring for why.
+	pe.custom_otobitz_receipt_number = nofaktur
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:
@@ -293,13 +305,18 @@ def backfill_split_penerimaan(from_date=None, to_date=None, dry_run=1) -> dict:
 	`nomor`), silently dropping the rest - real money already received
 	that's missing from the books.
 
-	No "rekey" step needed here unlike sync_booking.py's equivalent
-	backfill: _existing_payment_entry() matches through the Payment Entry
-	Reference table (reference_name = si_name), and that reference was
-	always created correctly for whichever invoice DID get a Payment Entry
-	- it's only the invoices that never got one at all that this finds and
-	creates. dry_run=1 (default) reports only; dry_run=0 actually creates
-	them."""
+	Any entry already keyed by the old shared `nomor` instead of the correct
+	per-invoice `nofaktur` (a genuinely pre-fix entry, or one created by an
+	earlier run of this same backfill before the unique-constraint issue was
+	found - confirmed live: 3 of 5 missing payments on 2026-11-07 created
+	fine, the other 2 failed outright with a duplicate-key error on
+	custom_otobitz_receipt_number, since two DIFFERENT invoices under the
+	same receipt both need their own row there) is found unambiguously via
+	its own Payment Entry Reference row (reference_name = si_name - this
+	endpoint, unlike sync_booking.py's unallocated advances, always links
+	straight to one specific invoice, no amount/party/date heuristic
+	needed) and rekeyed rather than mistaken for missing. dry_run=1
+	(default) reports only; dry_run=0 actually rekeys/creates."""
 	frappe.only_for("System Manager")
 	dry_run = cint(dry_run)
 	from_date = str(getdate(from_date) if from_date else getdate("2026-09-01"))
@@ -311,6 +328,7 @@ def backfill_split_penerimaan(from_date=None, to_date=None, dry_run=1) -> dict:
 		"dry_run": bool(dry_run),
 		"receipts_with_split": 0,
 		"already_ok": 0,
+		"rekeyed": 0,
 		"created": 0,
 		"created_amount": 0.0,
 		"skipped_zero_or_settled": 0,
@@ -352,20 +370,32 @@ def backfill_split_penerimaan(from_date=None, to_date=None, dry_run=1) -> dict:
 					report["errors"].append(f"{nomor}/{nofaktur}: no Sales Invoice found")
 					continue
 
-				if _existing_payment_entry(nomor, si_name):
+				if _existing_payment_entry(nofaktur):
 					report["already_ok"] += 1
 					continue
 
 				amount = flt(row.get("nilaipenerimaan"))
+
+				pe_name = _find_pe_by_invoice_reference(si_name)
+				if pe_name:
+					report["details"].append(
+						{"nomor": nomor, "nofaktur": nofaktur, "si_name": si_name, "amount": amount, "action": "rekey", "pe": pe_name}
+					)
+					report["rekeyed"] += 1
+					if not dry_run:
+						frappe.db.set_value("Payment Entry", pe_name, "custom_otobitz_receipt_number", nofaktur)
+						frappe.db.commit()
+					continue
+
 				report["details"].append(
-					{"nomor": nomor, "nofaktur": nofaktur, "si_name": si_name, "amount": amount}
+					{"nomor": nomor, "nofaktur": nofaktur, "si_name": si_name, "amount": amount, "action": "create"}
 				)
 				if dry_run:
 					report["created"] += 1
 					report["created_amount"] += amount
 					continue
 				try:
-					pe_name = _create_payment_entry(nomor, si_name, row)
+					pe_name = _create_payment_entry(nomor, si_name, nofaktur, row)
 					frappe.db.commit()
 					if pe_name:
 						report["created"] += 1
