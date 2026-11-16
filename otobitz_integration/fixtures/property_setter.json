@@ -7095,13 +7095,13 @@
   "doctype_or_field": "DocField",
   "field_name": "transaction_references",
   "is_system_generated": 0,
-  "modified": "2026-10-20 15:23:26.249248",
+  "modified": "2026-11-16 10:00:00.000000",
   "module": "OtoBitz Integration",
   "name": "Payment Entry-transaction_references-hidden",
   "property": "hidden",
   "property_type": "Check",
   "row_name": null,
-  "value": "1"
+  "value": "0"
  },
  {
   "default_value": null,
@@ -7111,13 +7111,13 @@
   "doctype_or_field": "DocField",
   "field_name": "reference_no",
   "is_system_generated": 0,
-  "modified": "2026-10-20 15:23:26.305623",
+  "modified": "2026-11-16 10:00:00.000000",
   "module": "OtoBitz Integration",
   "name": "Payment Entry-reference_no-hidden",
   "property": "hidden",
   "property_type": "Check",
   "row_name": null,
-  "value": "1"
+  "value": "0"
  },
  {
   "default_value": null,
@@ -7303,13 +7303,13 @@
   "doctype_or_field": "DocField",
   "field_name": "reference_date",
   "is_system_generated": 0,
-  "modified": "2026-10-20 15:23:27.500859",
+  "modified": "2026-11-16 10:00:00.000000",
   "module": "OtoBitz Integration",
   "name": "Payment Entry-reference_date-hidden",
   "property": "hidden",
   "property_type": "Check",
   "row_name": null,
-  "value": "1"
+  "value": "0"
  },
  {
   "default_value": null,
