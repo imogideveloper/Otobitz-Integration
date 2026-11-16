@@ -619,26 +619,32 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 			price_list_rate = oto_subtotal
 			discount_amount = 0
 			rate = oto_subtotal
-		elif rate and oto_subtotal and abs(qty * rate - oto_subtotal) > 0.01:
+		elif rate and oto_subtotal:
 			# subtotal is what OtoBitz actually billed for this line - trust
-			# it over their own (possibly rounded-for-display) qty, so this
-			# Sales Order's qty * rate always lands on the real amount
-			# instead of silently under/over-billing by the rounding gap.
-			# Gated to a >0.01 rupiah gap (was >1 rupiah) - OtoBitz rounds
-			# its own per-item subtotal to the nearest whole rupiah, so a
-			# genuine rounding gap can be anywhere up to 0.5 rupiah (e.g.
-			# SO-503-261100156: qty 0.18 * rate 198198 = 35675.64, OtoBitz's
-			# own subtotal is 35676 - a 0.36 gap that the old >1 threshold
-			# let straight through uncorrected, leaving net_total itself a
-			# few cents off a whole rupiah - which is what was showing up
-			# as a literal "Rp 0.70" fractional line in the posted Sales
-			# Invoice's own GL Round Off entry, not just an ugly number in
-			# the UI). Plain float noise (the 1/14-style case this >N gate
-			# originally existed for, confirmed live on SO-101-261100033) is
-			# several orders of magnitude smaller than that - well under
-			# 0.01 - so lowering the threshold this far still leaves an
-			# already-clean qty like "0.2" alone.
-			qty = oto_subtotal / rate
+			# it over qty*rate, unconditionally (no gap threshold): OtoBitz's
+			# own raw qty is frequently a repeating decimal truncated to ~7
+			# digits (e.g. 1/14 -> 0.0714286), and solving the OLD way (qty =
+			# oto_subtotal / rate, keeping the original rate) stores that
+			# same kind of truncated qty right back - which then multiplies
+			# back out to something a fraction of a rupiah off oto_subtotal
+			# again, just smaller. Confirmed live on SO-302-261100138: qty
+			# 0.1176471 (already OtoBitz's own truncated figure) * rate
+			# 153153 = 18018.0063, a 0.63-sen gap under the old >0.01 gate -
+			# too small to trigger the old correction, but still enough to
+			# leave Grand Total at 328000.01 instead of OtoBitz's own
+			# 328000.00, once summed into the Sales Order's net_total and
+			# carried through the Pembulatan derivation. Solving for RATE
+			# instead keeps qty exactly as OtoBitz reports it (so the
+			# displayed quantity still matches their own) and makes
+			# qty * rate reproduce oto_subtotal to full float precision,
+			# since it's solved directly from the qty actually being kept -
+			# no repeated truncate-then-remultiply round trip left to drift.
+			# price_list_rate is bumped by the same amount so discount_amount
+			# (the "Diskon" column) stays exactly what OtoBitz reported,
+			# rather than being silently zeroed by this correction.
+			new_rate = oto_subtotal / qty
+			price_list_rate += new_rate - rate
+			rate = new_rate
 		item_row = {
 			"item_code": item_code,
 			"qty": qty,
