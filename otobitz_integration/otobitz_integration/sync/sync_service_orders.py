@@ -106,6 +106,38 @@ def _pin_oto_taxes(doc, header: dict, company: str) -> None:
 	# whatever's left over instead of carrying a hidden 0.36 mismatch
 	# through to grand_total.
 	dpp = sum(flt(it.qty) * flt(it.rate) for it in doc.items)
+
+	# OtoBitz's own header dpp/grandtotal is a WHOLE-rupiah figure - it rounds
+	# the precise per-item sum away before adding PPN, so its own "rounding"
+	# field only ever reflects a cash-rounding nudge ON TOP OF that already-
+	# rounded dpp, never the item-precision gap itself. Our dpp above is kept
+	# fraction-exact to each item's own oto_subtotal (by design, so per-line
+	# Subtotal always matches OtoBitz's own figure) - confirmed live on
+	# SO-503-261100189: dpp 836756.72 vs OtoBitz's own (rounded) 836757,
+	# which without this step shows up as a "Pembulatan: 0.28" that OtoBitz's
+	# own SO Detail page reports as a clean 0, even though grand_total still
+	# lands correctly either way.
+	#
+	# Nudge ONE item's rate by the sub-rupiah remainder so net_total itself
+	# becomes that same whole-rupiah figure - preferring an item whose amount
+	# is already fractional (least surprising place for a sub-rupiah tweak to
+	# land) over one that already matched OtoBitz's own subtotal exactly.
+	# Falls back to the largest-qty item if every amount is already whole
+	# (nothing to prefer) - large qty keeps delta_rate small/stable rather
+	# than risking a visible rate jump by dividing by a near-zero qty.
+	dpp_rounded = flt(round(dpp))
+	item_adjustment = dpp_rounded - dpp
+	if abs(item_adjustment) > 1e-6 and doc.items:
+		fractional_items = [
+			it for it in doc.items if abs(flt(it.qty) * flt(it.rate) - round(flt(it.qty) * flt(it.rate))) > 1e-6
+		]
+		target = fractional_items[0] if fractional_items else max(doc.items, key=lambda it: flt(it.qty))
+		if flt(target.qty) >= 0.01:
+			delta_rate = item_adjustment / flt(target.qty)
+			target.rate = flt(target.rate) + delta_rate
+			target.price_list_rate = flt(target.price_list_rate) + delta_rate
+			dpp = dpp_rounded
+
 	grandtotal = flt(header.get("grandtotal"))
 	rounding = (grandtotal - dpp - ppn) if grandtotal else flt(header.get("rounding"))
 	if rounding:
