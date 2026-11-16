@@ -28,6 +28,8 @@ variant, duplicate name) is skipped and logged rather than guessed at or
 used to create a new, likely-duplicate Customer record.
 """
 
+import time
+
 import frappe
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_bank_cash_account
 from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
@@ -220,7 +222,18 @@ def backfill_split_booking_advances(from_date=None, to_date=None, dry_run=1) -> 
 		"details": [],
 	}
 
-	for chunk_start, chunk_end in _iter_date_chunks(from_date, to_date):
+	# No overlap with the scheduled sync's own cooldown logic (orchestrator.py
+	# only paces between DIFFERENT endpoints within one run, not repeated
+	# calls to the SAME one) - this backfill hits one endpoint many times in
+	# a row with no pacing at all otherwise, which got rate-limited hard
+	# enough in practice to look like a hang (confirmed live: a 16-day/8-
+	# chunk run on penerimaanuang never returned). Reuses the same "light"
+	# cooldown setting the regular sync paces lighter endpoints with.
+	cooldown = frappe.db.get_single_value("OtoBitz Settings", "light_endpoint_cooldown_seconds") or 20
+
+	for chunk_index, (chunk_start, chunk_end) in enumerate(_iter_date_chunks(from_date, to_date)):
+		if chunk_index:
+			time.sleep(cooldown)
 		try:
 			response = call_api("penerimaanuangmukabooking", {"tanggalawal": chunk_start, "tanggalakhir": chunk_end})
 		except OtoBitzAPIError as exc:
