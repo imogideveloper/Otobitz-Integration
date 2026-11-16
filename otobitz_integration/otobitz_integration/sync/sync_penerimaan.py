@@ -35,7 +35,7 @@ from collections import defaultdict
 
 import frappe
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_bank_cash_account, get_payment_entry
-from frappe.utils import add_days, flt, get_first_day, getdate, nowdate
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
