@@ -359,7 +359,17 @@
 					fields: fields,
 					filters: item.filters || {},
 					limit_page_length: PAGE_LENGTH,
-					order_by: "modified desc",
+					// "creation desc", not "modified desc" - confirmed live on
+					// production that none of these tables (OtoBitz SO/PO/Receipt
+					// Detail, Sales Invoice) have a DB index on `modified`, only on
+					// `creation` (matches each archive doctype's own configured
+					// sort_field/sort_order). Sorting by modified on OtoBitz SO
+					// Detail's ~26k rows forced a full table scan + filesort -
+					// measured at 6.7s per call - invisible on local's much
+					// smaller table but very noticeable in production. These are
+					// insert-once archive rows anyway, so creation order is
+					// equally meaningful here.
+					order_by: "creation desc",
 				},
 			})
 			.then((r) => {
