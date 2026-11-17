@@ -29,6 +29,14 @@ frappe.ui.form.on("OtoBitz Settings", {
 	refresh(frm) {
 		frm.call("get_dashboard_summary").then((r) => r.message && render_otobitz_dashboard(frm, r.message));
 
+		// Every button below is grouped (3rd arg to add_custom_button) by
+		// scope - Sinkronisasi (whole-site), Benerin Nama Customer,  Satu
+		// Work Order - instead of seven buttons flat in one row. No two of
+		// these duplicate each other's job: each operates at a genuinely
+		// different scope (whole site / all customers / customers in a date
+		// range / one WO without touching existing docs / one WO
+		// destructively replacing existing docs).
+
 		// Sync Now / Sync Ulang dari Tanggal / Benerin Nama Customer are all
 		// enqueued server-side now (see otobitz_settings.py's docstrings) -
 		// never run them synchronously in-request, even in developer_mode:
@@ -42,42 +50,7 @@ frappe.ui.form.on("OtoBitz Settings", {
 		// Ringkasan OtoBitz counts above after a refresh.
 		frm.add_custom_button(__("Sync Now"), () => {
 			frm.call("sync_now").then(() => frappe.show_alert({ message: __("Sync sudah diantrikan."), indicator: "green" }));
-		});
-
-		frm.add_custom_button(__("Benerin Nama Customer"), () => {
-			frappe.confirm(
-				__(
-					"Cek ulang semua nama Customer yang masih acak (gagal didekripsi) ke OtoBitz, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Bisa makan waktu agak lama di background."
-				),
-				() => {
-					frm.call("fix_customer_names").then(() =>
-						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log / Error Log beberapa saat lagi."), indicator: "green" }, 7)
-					);
-				}
-			);
-		});
-
-		frm.add_custom_button(__("Benerin Nama Customer per Tanggal"), () => {
-			if (!frm.doc.fix_customer_names_from_date) {
-				frappe.msgprint(__("Pilih tanggal dulu di field \"Dari Tanggal\" (bagian Benerin Nama Customer)."));
-				return;
-			}
-			const from_label = frappe.datetime.str_to_user(frm.doc.fix_customer_names_from_date);
-			const range_label = !frm.doc.fix_customer_names_to_date || frm.doc.fix_customer_names_to_date === frm.doc.fix_customer_names_from_date
-				? __("persis tanggal {0}", [from_label])
-				: __("dari tanggal {0} sampai {1}", [from_label, frappe.datetime.str_to_user(frm.doc.fix_customer_names_to_date)]);
-			frappe.confirm(
-				__(
-					"Cek ulang nama Customer buat yang transaksi {0}, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Jalan di background.",
-					[range_label]
-				),
-				() => {
-					frm.call("fix_customer_names_for_date").then(() =>
-						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log / Error Log beberapa saat lagi."), indicator: "green" }, 7)
-					);
-				}
-			);
-		});
+		}, __("Sinkronisasi"));
 
 		frm.add_custom_button(__("Sync Ulang dari Tanggal"), () => {
 			if (!frm.doc.manual_sync_from_date) {
@@ -104,7 +77,42 @@ frappe.ui.form.on("OtoBitz Settings", {
 					);
 				}
 			);
-		});
+		}, __("Sinkronisasi"));
+
+		frm.add_custom_button(__("Benerin Nama Customer"), () => {
+			frappe.confirm(
+				__(
+					"Cek ulang semua nama Customer yang masih acak (gagal didekripsi) ke OtoBitz, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Bisa makan waktu agak lama di background."
+				),
+				() => {
+					frm.call("fix_customer_names").then(() =>
+						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log / Error Log beberapa saat lagi."), indicator: "green" }, 7)
+					);
+				}
+			);
+		}, __("Benerin Nama Customer"));
+
+		frm.add_custom_button(__("Benerin Nama Customer per Tanggal"), () => {
+			if (!frm.doc.fix_customer_names_from_date) {
+				frappe.msgprint(__("Pilih tanggal dulu di field \"Dari Tanggal\" (bagian Benerin Nama Customer)."));
+				return;
+			}
+			const from_label = frappe.datetime.str_to_user(frm.doc.fix_customer_names_from_date);
+			const range_label = !frm.doc.fix_customer_names_to_date || frm.doc.fix_customer_names_to_date === frm.doc.fix_customer_names_from_date
+				? __("persis tanggal {0}", [from_label])
+				: __("dari tanggal {0} sampai {1}", [from_label, frappe.datetime.str_to_user(frm.doc.fix_customer_names_to_date)]);
+			frappe.confirm(
+				__(
+					"Cek ulang nama Customer buat yang transaksi {0}, dan perbaiki Sales Order/Sales Invoice yang masih kebawa nama lama? Jalan di background.",
+					[range_label]
+				),
+				() => {
+					frm.call("fix_customer_names_for_date").then(() =>
+						frappe.show_alert({ message: __("Sudah diantrikan - cek OtoBitz Sync Log / Error Log beberapa saat lagi."), indicator: "green" }, 7)
+					);
+				}
+			);
+		}, __("Benerin Nama Customer"));
 
 		frm.add_custom_button(__("Look Up Work Order"), () => {
 			if (!frm.doc.lookup_wo_number) {
@@ -129,7 +137,7 @@ frappe.ui.form.on("OtoBitz Settings", {
 					frappe.msgprint({ title: __("Done"), message: msg, indicator: "green" });
 				})
 				.catch(() => frappe.dom.unfreeze());
-		});
+		}, __("Satu Work Order"));
 
 		frm.add_custom_button(__("Paksa Sync Ulang (Hapus Dulu)"), () => {
 			if (!frm.doc.lookup_wo_number) {
@@ -154,6 +162,18 @@ frappe.ui.form.on("OtoBitz Settings", {
 					);
 				}
 			);
+		}, __("Satu Work Order"));
+
+		// Every button above just enqueues and shows a generic "sudah
+		// diantrikan" toast - there's no way from here to tell whether a job
+		// is still queued, actually running, finished, or failed. "RQ Job"
+		// is Frappe's own live view straight off the Redis queue
+		// (/app/rq-job) - every otobitz_* job_id this app enqueues (see
+		// otobitz_settings.py's frappe.enqueue() calls) is filtered to here
+		// instead of showing every background job on the whole site. Kept
+		// standalone (no group) - it's a monitoring link, not an action.
+		frm.add_custom_button(__("Lihat Antrian Background Job"), () => {
+			frappe.set_route("List", "RQ Job", { name: ["like", "%otobitz%"] });
 		});
 	},
 });
