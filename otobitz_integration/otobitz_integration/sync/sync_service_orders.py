@@ -363,13 +363,102 @@ def _sync_one_wo(
 
 	statuswo = (header.get("statuswo") or "").strip().upper()
 	if statuswo == "FAKTUR":
-		has_invoice = frappe.db.exists("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
-		if not has_invoice:
+		# NOT "does any Sales Invoice exist for this WO" - checked by its
+		# CURRENT nofaktur specifically. Confirmed live: 20 of 27 WOs that
+		# ever showed a BATAL INVOICE sighting already had a Sales Invoice
+		# created BEFORE OtoBitz cancelled that invoice - the bare
+		# "has_invoice" check then saw SOMETHING existed and never created
+		# the real reissued invoice at all, leaving a Sales Invoice that
+		# OtoBitz itself considers void sitting there submitted and
+		# indistinguishable from a valid one (e.g. SO-003-261100228: our SI
+		# held nofaktur SV-003-261100237, exactly the one OtoBitz's own
+		# BATAL INVOICE row named as cancelled, while the real current
+		# invoice - SV-003-261100242 - never got created in our system).
+		current_nofaktur = clean(header.get("nofaktur"))
+		has_current_invoice = current_nofaktur and frappe.db.exists(
+			"Sales Invoice", {"custom_otobitz_wo_number": nomorwo, "custom_otobitz_nofaktur": current_nofaktur}
+		)
+		if not has_current_invoice:
+			if current_nofaktur:
+				_replace_stale_invoice(existing_so, nomorwo, current_nofaktur)
 			_create_sales_invoice(nomorwo, existing_so, header)
 	elif statuswo == "BATAL INVOICE":
 		_note_invoice_cancelled(existing_so, nomorwo, header)
 
 	return created
+
+
+def _replace_stale_invoice(so_name: str, nomorwo: str, current_nofaktur: str) -> list[str]:
+	"""Cancels every Sales Invoice this Work Order already has under a
+	DIFFERENT nofaktur than the one OtoBitz currently reports as valid -
+	see this function's own call site in _sync_one_wo() for the confirmed
+	live case this fixes. Kept, not deleted: cancelling leaves it as a
+	normal "Cancelled" Sales Invoice, the same native state any other
+	superseded document gets, so both the voided one and its eventual
+	replacement stay visible and auditable on the same Work Order instead
+	of one silently vanishing.
+
+	Any Payment Entry still referencing a cancelled invoice is cancelled
+	first (same reasoning as force_resync_wo()'s own PE handling,
+	elsewhere in this file) - the underlying money isn't lost, it just
+	needs sync_penerimaan.py's own regular retry to re-attach to whichever
+	Sales Invoice is now the valid one for this WO.
+
+	Stamps a Comment on the Sales Order naming exactly what got cancelled
+	and what it was replaced by - this only ever fires once per actual
+	reissue (the very next sync pass sees has_current_invoice=True and
+	never re-enters this path for the same nofaktur), so no dedup guard is
+	needed the way _note_invoice_cancelled() below needs one for its own,
+	genuinely repeatable, still-cancelled-every-cycle case."""
+	stale = frappe.get_all(
+		"Sales Invoice",
+		filters={
+			"custom_otobitz_wo_number": nomorwo,
+			"custom_otobitz_nofaktur": ["!=", current_nofaktur],
+			"docstatus": 1,
+		},
+		pluck="name",
+	)
+	for si_name in stale:
+		pe_names = frappe.get_all(
+			"Payment Entry Reference",
+			filters={"reference_doctype": "Sales Invoice", "reference_name": si_name},
+			pluck="parent",
+		)
+		for pe_name in set(pe_names):
+			pe = frappe.get_doc("Payment Entry", pe_name)
+			if pe.docstatus == 1:
+				pe.cancel()
+		si = frappe.get_doc("Sales Invoice", si_name)
+		if si.docstatus == 1:
+			si.cancel()
+		# custom_otobitz_wo_number has a UNIQUE database constraint -
+		# confirmed live, cancelling alone is NOT enough: the field stays
+		# set on a cancelled doc same as any other, so _create_sales_invoice()'s
+		# insert() right after this still hit a duplicate-key
+		# IntegrityError trying to claim the same WO number for the new
+		# invoice. Cleared here via a direct db write (bypasses the
+		# save()-blocks-on-cancelled-docs guard, same trick already used
+		# elsewhere in this app for a cancelled/submitted doc's own
+		# fields) - the cancelled invoice stays fully findable by its own
+		# custom_otobitz_nofaktur, it just stops claiming the WO-number
+		# slot the new one needs.
+		frappe.db.set_value("Sales Invoice", si_name, "custom_otobitz_wo_number", None, update_modified=False)
+
+	if stale:
+		frappe.get_doc(
+			{
+				"doctype": "Comment",
+				"comment_type": "Info",
+				"reference_doctype": "Sales Order",
+				"reference_name": so_name,
+				"content": (
+					f"OtoBitz: invoice lama ({', '.join(stale)}) dibatalkan OtoBitz, "
+					f"diganti invoice baru dengan nofaktur {current_nofaktur}"
+				),
+			}
+		).insert(ignore_permissions=True)
+	return stale
 
 
 def _note_invoice_cancelled(so_name: str, nomorwo: str, header: dict) -> None:
