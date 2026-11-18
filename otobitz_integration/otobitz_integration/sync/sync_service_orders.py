@@ -330,7 +330,22 @@ def _sync_one_wo(
 	if needs_customer_lookup is None:
 		needs_customer_lookup = _needs_customer_lookup(endpoint_name)
 
-	header = wo_rows[0]
+	# NOT just wo_rows[0] - confirmed live (otoxpertsoandpartpernomor,
+	# SO-302-261100131) that OtoBitz's API can prepend a phantom row with no
+	# kodereferensi at all and its OWN inconsistent dpp/ppn/grandtotal,
+	# ahead of every real item row (which all agreed with each other:
+	# grandtotal 857900, every one of them - the phantom row alone claimed
+	# 1236900). Blindly trusting row 0 as "the" header picked the phantom
+	# figures, which _pin_oto_taxes() then faithfully absorbed into a
+	# Rp341,434 Pembulatan that had nothing to do with rounding - the
+	# genuine 6-row total was correct all along. A real item row's own
+	# kodereferensi is never blank (see the per-item loop below), so
+	# preferring the first row that has one is a reliable way to skip past
+	# a phantom row without needing to know its shape in advance; falling
+	# back to wo_rows[0] only if every single row somehow lacks one (should
+	# never happen for otoxpertsoandpart's own rows, but safer than raising
+	# here over something this function doesn't otherwise need to assume).
+	header = next((r for r in wo_rows if (r.get("kodereferensi") or "").strip()), wo_rows[0])
 	existing_so = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 
 	if header.get("tglbatal"):
@@ -367,7 +382,21 @@ def _note_invoice_cancelled(so_name: str, nomorwo: str, header: dict) -> None:
 	cancelled-and-not-yet-reissued invoice is visible directly on the record
 	rather than only inferable from an absence. Guarded so the same
 	cancellation doesn't get re-commented every sync cycle this WO's date
-	stays inside the rolling window."""
+	stays inside the rolling window.
+
+	Also stamps custom_payment_status (otherwise unused on Sales Order,
+	beyond the custom Sales Order List View Client Script's own
+	get_so_business_status() falling back to it) to "Batal Invoice" - a
+	plain Comment only ever showed up buried in the Activity timeline, not
+	the list view's own "Invoice Status" column everyone actually scans
+	(reported live: "bukan cuma di Activity"). _create_sales_invoice()
+	clears this back out the moment a real invoice actually exists again,
+	so it never lingers past the reissue. Set unconditionally (not inside
+	the already_noted guard below) so a later sync pass that finds the SAME
+	still-cancelled invoice keeps the flag correctly set even though it
+	skips re-adding the comment."""
+	frappe.db.set_value("Sales Order", so_name, "custom_payment_status", "Batal Invoice", update_modified=False)
+
 	nofaktur = clean(header.get("nofaktur")) or nomorwo
 	marker = f"OtoBitz: invoice {nofaktur} berstatus BATAL INVOICE saat sync terakhir"
 	already_noted = frappe.db.exists(
@@ -810,6 +839,14 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.insert(ignore_permissions=True, ignore_mandatory=True)
 	si.submit()
 	sync_so_payment_status(si.name)
+
+	# Clears whatever _note_invoice_cancelled() may have stamped here on an
+	# earlier sync pass for this same WO (custom_payment_status =
+	# "Batal Invoice") - a real invoice exists again now, so the list
+	# view's own "Invoice Status" column should fall back to its normal
+	# Fully Invoiced/To Invoice reading instead of still flagging a
+	# cancellation that's since been superseded by this one.
+	frappe.db.set_value("Sales Order", so_name, "custom_payment_status", None, update_modified=False)
 
 	# Faktur number only exists once the invoice is made, so it lands on
 	# the Sales Order here rather than alongside custom_otobitz_so_number
