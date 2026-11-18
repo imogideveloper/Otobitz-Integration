@@ -101,27 +101,14 @@ function sod_format_value(key, value) {
 }
 
 // ---- 1. Raw Data (Tabel): this one row's own JSON, flat & grouped ----
-//
-// A WO that's had its invoice voided-and-reissued at some point has MORE
-// than one raw payload archived under the same Nomor WO (see
-// log_so_detail_rows()'s own docstring in common.py: a header-only
-// "BATAL INVOICE" marker row, previously silently discarded, now kept
-// under its own nofaktur-keyed slot) - sod_snapshot_toggle lets this
-// Tabel view switch to show one of THOSE instead of this row's own
-// raw_data, entirely as a client-side preview. Deliberately does NOT
-// touch frm.doc.raw_data or the Code field bound to it - this stays
-// scoped to the Tabel rendering only, so there's never a question of
-// whether what's on screen is this document's real saved value.
-let sod_selected_snapshot = null;
 
 function sod_render_table(frm) {
 	const field = frm.fields_dict.raw_data_table;
 	if (!field) return;
 
-	const raw_data = sod_selected_snapshot ? sod_selected_snapshot.raw_data : frm.doc.raw_data;
 	let data;
 	try {
-		data = JSON.parse(raw_data || "{}");
+		data = JSON.parse(frm.doc.raw_data || "{}");
 	} catch (e) {
 		field.$wrapper.html(`<div class="text-muted">${__("Raw Data bukan JSON yang valid")}</div>`);
 		return;
@@ -157,26 +144,41 @@ function sod_render_table(frm) {
 			</div>`)
 		.join("");
 
-	field.$wrapper.html(`${sod_build_snapshot_toggle(frm)}<div class="sod-table-wrap">${html}</div>`);
-	sod_bind_snapshot_toggle(frm, field);
+	field.$wrapper.html(`<div class="sod-table-wrap">${html}</div>`);
 }
+
+// A WO that's had its invoice voided-and-reissued at some point has MORE
+// than one raw payload archived under the same Nomor WO (see
+// log_so_detail_rows()'s own docstring in common.py: a header-only
+// "BATAL INVOICE" marker row, previously silently discarded, now kept
+// under its own nofaktur-keyed slot). sod_selected_snapshot drives the
+// toggle INSIDE the Ringkasan WO summary (not this raw-data table -
+// moved there on request: "jangan di table itu... di sini berubah
+// nilainya") - picking one overlays its own header fields (status,
+// faktur, dpp/ppn/grandtotal, ...) onto the Work Order/Total & Pembayaran
+// sections specifically. Customer/Kendaraan/Cabang/Items stay showing the
+// real underlying Work Order's own data regardless of which invoice
+// attempt is being viewed - those don't change between a cancelled
+// invoice and its replacement, only the invoice-level fields do.
+let sod_selected_snapshot = null;
 
 function sod_build_snapshot_toggle(frm) {
 	const snapshots = frm._sod_snapshots || [];
 	if (!snapshots.length) return "";
+	const current_value = sod_selected_snapshot ? sod_selected_snapshot.name : "";
+	const option = (value, label, selected) =>
+		`<option value="${frappe.utils.escape_html(value)}"${selected ? " selected" : ""}>${label}</option>`;
 	const options = [
-		`<option value="">${__("Data baris ini (saat ini)")}</option>`,
-		...snapshots.map(
-			(s) =>
-				`<option value="${frappe.utils.escape_html(s.name)}">${frappe.utils.escape_html(s.statuswo || "-")} - ${frappe.utils.escape_html(s.nofaktur || "-")}</option>`
+		option("", __("Invoice saat ini (aktif)"), !current_value),
+		...snapshots.map((s) =>
+			option(s.name, `${frappe.utils.escape_html(s.statuswo || "-")} - ${frappe.utils.escape_html(s.nofaktur || "-")}`, s.name === current_value)
 		),
 	].join("");
-	const current_value = sod_selected_snapshot ? sod_selected_snapshot.name : "";
 	return `
 		<div class="sod-snapshot-toggle">
-			<label>${__("Lihat snapshot")}</label>
+			<label>${__("Lihat snapshot invoice")}</label>
 			<select class="form-control sod-snapshot-select">${options}</select>
-		</div>`.replace(`value="${frappe.utils.escape_html(current_value)}"`, `value="${frappe.utils.escape_html(current_value)}" selected`);
+		</div>`;
 }
 
 function sod_bind_snapshot_toggle(frm, field) {
@@ -184,15 +186,21 @@ function sod_bind_snapshot_toggle(frm, field) {
 		const name = $(this).val();
 		if (!name) {
 			sod_selected_snapshot = null;
-			sod_render_table(frm);
+			sod_render_wo_summary(frm, true);
 			return;
 		}
 		frappe.call({
 			method: "frappe.client.get_value",
 			args: { doctype: "OtoBitz SO Detail", filters: name, fieldname: "raw_data" },
 			callback(r) {
-				sod_selected_snapshot = { name, raw_data: r.message && r.message.raw_data };
-				sod_render_table(frm);
+				let data = {};
+				try {
+					data = JSON.parse((r.message && r.message.raw_data) || "{}");
+				} catch (e) {
+					data = {};
+				}
+				sod_selected_snapshot = { name, data };
+				sod_render_wo_summary(frm, true);
 			},
 		});
 	});
@@ -205,7 +213,7 @@ function sod_fetch_snapshots(frm) {
 		args: { nomorwo: frm.doc.nomorwo },
 		callback(r) {
 			frm._sod_snapshots = (r.message || []).filter((s) => s.name !== frm.doc.name);
-			if (frm._sod_snapshots.length) sod_render_table(frm);
+			if (frm._sod_snapshots.length) sod_render_wo_summary(frm, true);
 		},
 	});
 }
@@ -249,14 +257,29 @@ function sod_check_chip(ok, label) {
 	return `<span class="wo-chip ${ok ? "wo-chip-ok" : "wo-chip-fail"}">${icon} ${frappe.utils.escape_html(label)}</span>`;
 }
 
-function sod_render_wo_summary(frm) {
+function sod_render_wo_summary(frm, use_cache) {
 	const field = frm.fields_dict.wo_summary_html;
 	if (!field) return;
 	if (!frm.doc.nomorwo) {
 		field.$wrapper.html("");
 		return;
 	}
-	if (frm._wo_summary_nomorwo === frm.doc.nomorwo) return;
+
+	const render = (res) => {
+		sod_inject_style();
+		field.$wrapper.html(sod_build_wo_summary_html(frm, res));
+		field.$wrapper.find(".wo-item-row").on("click", function () {
+			const name = $(this).attr("data-name");
+			if (name && name !== frm.doc.name) frappe.set_route("otobitz-so-detail", name);
+		});
+		sod_bind_snapshot_toggle(frm, field);
+	};
+
+	if (use_cache && frm._sod_base_summary) {
+		render(frm._sod_base_summary);
+		return;
+	}
+	if (frm._wo_summary_nomorwo === frm.doc.nomorwo && frm._sod_base_summary) return;
 	frm._wo_summary_nomorwo = frm.doc.nomorwo;
 
 	frappe.call({
@@ -264,23 +287,27 @@ function sod_render_wo_summary(frm) {
 		args: { nomorwo: frm.doc.nomorwo },
 		callback(r) {
 			if (!r.message) return;
-			sod_inject_style();
-			field.$wrapper.html(sod_build_wo_summary_html(frm, r.message));
-			field.$wrapper.find(".wo-item-row").on("click", function () {
-				const name = $(this).attr("data-name");
-				if (name && name !== frm.doc.name) frappe.set_route("otobitz-so-detail", name);
-			});
+			frm._sod_base_summary = r.message;
+			render(r.message);
 		},
 	});
 }
 
 function sod_build_wo_summary_html(frm, res) {
-	const h = res.header;
+	// Viewing a cancelled-invoice snapshot overlays ITS OWN fields on top
+	// of the real header for display only - res.header itself (the
+	// cached fetch result) is never mutated, so switching back to
+	// "Invoice saat ini" always shows the real, untouched current data.
+	const h = sod_selected_snapshot ? { ...res.header, ...sod_selected_snapshot.data } : res.header;
+	const viewing_snapshot = !!sod_selected_snapshot;
 
 	const indicator_color = (h.statuswo || "").toUpperCase() === "FAKTUR" ? "green" : "orange";
 
-	const checks = `
-		<div class="wo-checks">
+	const snapshot_toggle = sod_build_snapshot_toggle(frm);
+
+	const checks = viewing_snapshot
+		? `<div class="wo-snapshot-note">${__("Menampilkan snapshot invoice yang sudah tidak berlaku lagi (sudah dibatalkan/diganti OtoBitz) - cek konsistensi di bawah mengacu ke invoice yang AKTIF saat ini, bukan snapshot ini.")}</div>`
+		: `<div class="wo-checks">
 			${sod_check_chip(res.header_consistent, __("Header sama di {0} baris JSON", [res.items.length]))}
 			${sod_check_chip(res.dpp_match, __("Σ Subtotal = DPP"))}
 			${sod_check_chip(res.grandtotal_match, __("Σ Item + PPN = Grand Total"))}
@@ -429,7 +456,7 @@ function sod_build_wo_summary_html(frm, res) {
 			</div>
 		</div>`;
 
-	return `<div class="wo-summary">${checks}${work_order}${cabang}${customer_kendaraan}${items}${total}</div>`;
+	return `<div class="wo-summary">${snapshot_toggle}${checks}${work_order}${cabang}${customer_kendaraan}${items}${total}</div>`;
 }
 
 function sod_inject_style() {
@@ -448,6 +475,7 @@ function sod_inject_style() {
 .sod-table .sod-label{width:45%;color:var(--text-muted);white-space:nowrap}
 
 .wo-summary{display:flex;flex-direction:column;gap:20px;padding-bottom:8px}
+.wo-snapshot-note{background:var(--bg-orange, #fef1e3);color:var(--text-on-orange, #d9822b);border-radius:8px;padding:10px 14px;font-size:12.5px;font-weight:500}
 .wo-checks{display:flex;flex-wrap:wrap;gap:8px}
 .wo-chip{font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;display:inline-flex;align-items:center;gap:4px}
 .wo-chip-ok{background:var(--bg-green, #e6f4ea);color:var(--text-on-light-green, #137333)}
