@@ -1,0 +1,206 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-11-18 00:00:00.000000",
+ "description": "Arsip mentah 1:1 dari endpoint penerimaanuangmukabooking (uang muka booking, sebelum Work Order/Invoice ada) - 1 baris di sini = 1 alokasi persis seperti yang dikirim OtoBitz, terlepas dari Payment Entry yang dibangun darinya berhasil dibuat atau tidak. Dikunci per allocation_ref (noreferensi), bukan nomor - satu nomor/kuitansi bisa menutup beberapa booking/kendaraan sekaligus, masing-masing barisnya sendiri (lihat sync_booking.py).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "dedup_key",
+  "booking_summary_html",
+  "section_break_main",
+  "allocation_ref",
+  "nomor",
+  "tanggal",
+  "status",
+  "column_break_main",
+  "kode_cabang",
+  "namacabang",
+  "nilai",
+  "section_break_detail",
+  "namacustomer",
+  "paymentmetode",
+  "column_break_detail",
+  "keterangan",
+  "section_break_raw",
+  "raw_data_view",
+  "raw_data",
+  "raw_data_table"
+ ],
+ "fields": [
+  {
+   "fieldname": "dedup_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Dedup Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "booking_summary_html",
+   "fieldtype": "HTML",
+   "label": "Ringkasan"
+  },
+  {
+   "fieldname": "section_break_main",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "description": "Identitas per-alokasi yang sebenarnya (noreferensi) - BUKAN nomor kuitansi bersama. Lihat deskripsi doctype ini.",
+   "fieldname": "allocation_ref",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "No Referensi (Booking)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nomor",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Nomor Kuitansi",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tanggal",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tanggal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "kode_cabang",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Kode Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "namacabang",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Cabang",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nilai",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Nilai",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_detail",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Detail"
+  },
+  {
+   "description": "Endpoint ini tidak membawa kode/ID Customer - hanya nama bebas teks, dicocokkan exact-match ke Customer saat Payment Entry dibuat.",
+   "fieldname": "namacustomer",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Nama Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "paymentmetode",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Metode Pembayaran",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_detail",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "keterangan",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Keterangan",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_raw",
+   "fieldtype": "Section Break",
+   "label": "Data Mentah (JSON, persis dari API)"
+  },
+  {
+   "default": "JSON",
+   "fieldname": "raw_data_view",
+   "fieldtype": "Select",
+   "label": "Tampilan",
+   "no_copy": 1,
+   "options": "JSON\nTabel"
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view != \"Tabel\"",
+   "fieldname": "raw_data",
+   "fieldtype": "Code",
+   "label": "Raw Data",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.raw_data_view == \"Tabel\"",
+   "fieldname": "raw_data_table",
+   "fieldtype": "HTML",
+   "label": "Raw Data (Tabel)"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OtoBitz Integration",
+ "name": "OtoBitz Booking Detail",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "nomor,allocation_ref",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "allocation_ref",
+ "track_changes": 0
+}

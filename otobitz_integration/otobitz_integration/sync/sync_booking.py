@@ -37,6 +37,7 @@ from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
+	log_booking_detail_row,
 	log_failed_sync,
 	renew_sync_lock,
 	resolve_failed_sync,
@@ -95,6 +96,10 @@ def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
 			allocation_ref = clean(row.get("noreferensi")) or nomor
 			if not allocation_ref:
 				continue
+			# Raw archive, independent of whatever happens below - see
+			# log_booking_detail_row()'s docstring in common.py.
+			log_booking_detail_row(allocation_ref, nomor, row)
+			frappe.db.commit()
 			try:
 				was_created = _sync_one_booking(allocation_ref, nomor, row)
 				created += was_created
