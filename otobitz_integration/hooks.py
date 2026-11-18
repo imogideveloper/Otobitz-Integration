@@ -157,10 +157,10 @@ after_app_install = "otobitz_integration.install.after_app_install"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
+permission_query_conditions = {
+	"OtoBitz SO Detail": "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_permission_query_conditions",
+}
+
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }

@@ -12,6 +12,19 @@ class OtoBitzSODetail(Document):
 	pass
 
 
+def get_permission_query_conditions(user=None) -> str:
+	"""Registered in hooks.py - restricts every List View/Report View/REST
+	`get_list` of this doctype to `is_wo_summary_row=1` rows, so one Work
+	Order's several raw item rows (full fidelity, still all archived - see
+	log_so_detail_rows() in common.py) show up as a single row there instead
+	of one per item. Internal lookups that genuinely need every row
+	(get_wo_summary/get_status_snapshots below, log_so_detail_rows itself) all
+	go through frappe.get_all(), which always runs with ignore_permissions=True
+	and so never hits this condition at all - only the actual "list this
+	doctype" path does."""
+	return "`tabOtoBitz SO Detail`.`is_wo_summary_row` = 1"
+
+
 # Keys that describe the Work Order as a whole (customer, vehicle, payment,
 # totals, ...) - every sibling row sharing a Nomor WO (1 row = 1 item, per
 # this doctype's design) should carry an identical value for all of these.
@@ -143,8 +156,15 @@ def get_status_snapshots(nomorwo):
 	Raw Data toggle on this form's own JS (otobitz_so_detail.js) so a
 	cancelled invoice's actual payload is directly viewable there,
 	instead of only ever being inferable from a Sales Order Comment.
-	Excludes the real item rows get_wo_summary() above already covers -
-	this is deliberately the complement of that function's own filter."""
+	Excludes the real item rows get_wo_summary() above already covers, same
+	as before - and now also excludes the "is_wo_summary_row" FAKTUR summary
+	row log_so_detail_rows()/_upsert_wo_summary_row() in common.py create for
+	the CURRENT invoice attempt (also kodereferensi-blank, since it's a
+	header-only aggregate too): that one already IS "Invoice saat ini
+	(aktif)", the default the toggle in otobitz_so_detail.js shows with no
+	selection - listing it again here as a second, redundant snapshot option
+	would be confusing, so only a non-FAKTUR (i.e. actually-superseded)
+	status row belongs here."""
 	frappe.only_for("System Manager")
 	rows = frappe.get_all(
 		"OtoBitz SO Detail",
@@ -152,4 +172,4 @@ def get_status_snapshots(nomorwo):
 		fields=["name", "nofaktur", "statuswo", "kodereferensi", "tanggal"],
 		order_by="creation desc",
 	)
-	return [r for r in rows if not r.kodereferensi]
+	return [r for r in rows if not r.kodereferensi and (r.statuswo or "").strip().upper() != "FAKTUR"]
