@@ -330,7 +330,22 @@ def _sync_one_wo(
 	if needs_customer_lookup is None:
 		needs_customer_lookup = _needs_customer_lookup(endpoint_name)
 
-	header = wo_rows[0]
+	# NOT just wo_rows[0] - confirmed live (otoxpertsoandpartpernomor,
+	# SO-302-261100131) that OtoBitz's API can prepend a phantom row with no
+	# kodereferensi at all and its OWN inconsistent dpp/ppn/grandtotal,
+	# ahead of every real item row (which all agreed with each other:
+	# grandtotal 857900, every one of them - the phantom row alone claimed
+	# 1236900). Blindly trusting row 0 as "the" header picked the phantom
+	# figures, which _pin_oto_taxes() then faithfully absorbed into a
+	# Rp341,434 Pembulatan that had nothing to do with rounding - the
+	# genuine 6-row total was correct all along. A real item row's own
+	# kodereferensi is never blank (see the per-item loop below), so
+	# preferring the first row that has one is a reliable way to skip past
+	# a phantom row without needing to know its shape in advance; falling
+	# back to wo_rows[0] only if every single row somehow lacks one (should
+	# never happen for otoxpertsoandpart's own rows, but safer than raising
+	# here over something this function doesn't otherwise need to assume).
+	header = next((r for r in wo_rows if (r.get("kodereferensi") or "").strip()), wo_rows[0])
 	existing_so = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 
 	if header.get("tglbatal"):
