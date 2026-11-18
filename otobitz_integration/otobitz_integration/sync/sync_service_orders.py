@@ -382,7 +382,21 @@ def _note_invoice_cancelled(so_name: str, nomorwo: str, header: dict) -> None:
 	cancelled-and-not-yet-reissued invoice is visible directly on the record
 	rather than only inferable from an absence. Guarded so the same
 	cancellation doesn't get re-commented every sync cycle this WO's date
-	stays inside the rolling window."""
+	stays inside the rolling window.
+
+	Also stamps custom_payment_status (otherwise unused on Sales Order,
+	beyond the custom Sales Order List View Client Script's own
+	get_so_business_status() falling back to it) to "Batal Invoice" - a
+	plain Comment only ever showed up buried in the Activity timeline, not
+	the list view's own "Invoice Status" column everyone actually scans
+	(reported live: "bukan cuma di Activity"). _create_sales_invoice()
+	clears this back out the moment a real invoice actually exists again,
+	so it never lingers past the reissue. Set unconditionally (not inside
+	the already_noted guard below) so a later sync pass that finds the SAME
+	still-cancelled invoice keeps the flag correctly set even though it
+	skips re-adding the comment."""
+	frappe.db.set_value("Sales Order", so_name, "custom_payment_status", "Batal Invoice", update_modified=False)
+
 	nofaktur = clean(header.get("nofaktur")) or nomorwo
 	marker = f"OtoBitz: invoice {nofaktur} berstatus BATAL INVOICE saat sync terakhir"
 	already_noted = frappe.db.exists(
@@ -825,6 +839,14 @@ def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
 	si.insert(ignore_permissions=True, ignore_mandatory=True)
 	si.submit()
 	sync_so_payment_status(si.name)
+
+	# Clears whatever _note_invoice_cancelled() may have stamped here on an
+	# earlier sync pass for this same WO (custom_payment_status =
+	# "Batal Invoice") - a real invoice exists again now, so the list
+	# view's own "Invoice Status" column should fall back to its normal
+	# Fully Invoiced/To Invoice reading instead of still flagging a
+	# cancellation that's since been superseded by this one.
+	frappe.db.set_value("Sales Order", so_name, "custom_payment_status", None, update_modified=False)
 
 	# Faktur number only exists once the invoice is made, so it lands on
 	# the Sales Order here rather than alongside custom_otobitz_so_number
