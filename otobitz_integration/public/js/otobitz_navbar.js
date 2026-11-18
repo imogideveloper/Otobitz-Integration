@@ -75,6 +75,30 @@
 					],
 				},
 				{
+					// Arsip mentah penerimaanuangmukabooking (1 baris = 1 alokasi/
+					// kendaraan persis dari API, dikunci per allocation_ref bukan
+					// nomor - satu kuitansi bisa menutup beberapa booking sekaligus)
+					// - bukan doctype Payment Entry bawaan, sama alasannya dengan
+					// Sales Order (WO) di atas. Sebelumnya endpoint ini sama sekali
+					// tidak punya arsip/menu sendiri (sync_booking.py langsung bikin
+					// Payment Entry tanpa menyimpan raw copy), jadi kalau alokasinya
+					// gagal/di-skip tidak ada jejak apapun yang bisa dicek dari Desk.
+					label: "Uang Muka Booking",
+					icon: "wallet",
+					doctype: "OtoBitz Booking Detail",
+					filters: {},
+					embed: true,
+					columns: [
+						["nomor", "Nomor Kuitansi"],
+						["allocation_ref", "No. Referensi"],
+						["namacabang", "Cabang"],
+						["tanggal", "Tanggal", "Date"],
+						["status", "Status", "Status"],
+						["namacustomer", "Customer"],
+						["nilai", "Nilai", "Currency"],
+					],
+				},
+				{
 					// Arsip mentah penerimaanuang (1 baris = 1 transaksi persis
 					// dari API) - bukan doctype Payment Entry bawaan, sama
 					// alasannya dengan Sales Order (WO) di atas.

@@ -622,6 +622,52 @@ def log_receipt_detail_row(endpoint: str, row: dict) -> bool:
 		return False
 
 
+def log_booking_detail_row(allocation_ref: str, nomor: str, row: dict) -> bool:
+	"""Archive a raw penerimaanuangmukabooking row into `OtoBitz Booking
+	Detail`, independent of whether the Payment Entry built from it actually
+	got created - same philosophy as log_so_detail_rows()/
+	log_receipt_detail_row() above.
+
+	Dedup/upsert key is `allocation_ref` (noreferensi), NOT `nomor` -
+	deliberately different from log_receipt_detail_row()'s own `endpoint|
+	nomor` key. One `nomor` here can cover several allocations at once (see
+	sync_booking.py's module docstring), and keying the archive on the
+	shared `nomor` would upsert every allocation under one receipt into the
+	SAME archive row, overwriting it down to whichever one was processed
+	last - silently losing the others from the archive even after
+	sync_booking.py's own dedup fix correctly creates a Payment Entry for
+	each one. (log_receipt_detail_row() has this same latent gap on its own
+	`nomor`-only key for penerimaanuang/pengeluaranuang's split-receipt rows -
+	not fixed here since it's a separate doctype/call site, flagged as a
+	known follow-up.)"""
+	import json
+
+	allocation_ref = clean(allocation_ref)
+	if not allocation_ref:
+		return False
+	dedup_key = allocation_ref
+	values = {
+		"allocation_ref": allocation_ref,
+		"nomor": clean(nomor),
+		"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
+		"status": clean(row.get("status")),
+		"kode_cabang": clean(row.get("kode_cabang")),
+		"namacabang": clean(row.get("namacabang")),
+		"nilai": flt(row.get("nilaipenerimaan")),
+		"namacustomer": clean(row.get("namacustomer")),
+		"paymentmetode": clean(row.get("paymentmetode")),
+		"keterangan": clean(row.get("keterangan")) or clean(row.get("memo")),
+		"raw_data": json.dumps(row, default=str, ensure_ascii=False),
+	}
+	values = {k: v for k, v in values.items() if v is not None}
+	try:
+		upsert("OtoBitz Booking Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+		return True
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to archive Booking Detail row {dedup_key}")
+		return False
+
+
 def log_po_detail_row(endpoint: str, nomor: str, row: dict) -> bool:
 	"""Archive a raw masterdata_orderparts/masterdata_orderpekerjaanluar/
 	masterdata_oppnt order into `OtoBitz PO Detail`, one row per order -
