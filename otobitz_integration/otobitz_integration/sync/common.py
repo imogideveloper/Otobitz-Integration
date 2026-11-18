@@ -592,14 +592,31 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 	logged = 0
 	for row in rows:
 		nomorwo = clean(row.get("nomorwo"))
-		kodereferensi = clean(row.get("kodereferensi"))
-		if not nomorwo or not kodereferensi:
+		if not nomorwo:
 			continue
-		dedup_key = f"{nomorwo}|{kodereferensi}"
+		kodereferensi = clean(row.get("kodereferensi"))
+		nofaktur = clean(row.get("nofaktur"))
+		if kodereferensi:
+			dedup_key = f"{nomorwo}|{kodereferensi}"
+		elif nofaktur:
+			# A header-only row with no item at all - confirmed live,
+			# OtoBitz sends exactly this shape for the "BATAL INVOICE"
+			# marker row ahead of the real item rows once an invoice is
+			# voided (kodereferensi/namareferensi/harga/qty/subtotal all
+			# blank or zero, but nofaktur/statuswo/dpp/ppn/grandtotal
+			# still carry that specific invoice attempt's own figures).
+			# Previously silently discarded by the `not kodereferensi`
+			# check above - archived under its own nofaktur-keyed slot
+			# instead, so a cancelled invoice's snapshot stays visible/
+			# selectable here too (see otobitz_so_detail.js's status
+			# toggle), not just inferable from a Sales Order Comment.
+			dedup_key = f"{nomorwo}|STATUS|{nofaktur}"
+		else:
+			continue
 		values = {
 			"endpoint": endpoint,
 			"nomorwo": nomorwo,
-			"nofaktur": clean(row.get("nofaktur")),
+			"nofaktur": nofaktur,
 			"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
 			"statuswo": clean(row.get("statuswo")),
 			"kode_cabang": clean(row.get("kode_cabang")),
@@ -608,7 +625,7 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 			"customer_name": clean(row.get("nama")),
 			"nopolisi": clean(row.get("nopolisi")),
 			"kodereferensi": kodereferensi,
-			"namareferensi": clean(row.get("namareferensi")),
+			"namareferensi": clean(row.get("namareferensi")) or (None if kodereferensi else "(Baris status - tidak ada item)"),
 			"jenisdoc": clean(row.get("jenisdoc")),
 			"qty": flt(row.get("qty")),
 			"harga": flt(row.get("harga")),

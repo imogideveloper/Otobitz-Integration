@@ -52,9 +52,17 @@ def get_wo_summary(nomorwo):
 	rows = frappe.get_all(
 		"OtoBitz SO Detail",
 		filters={"nomorwo": nomorwo},
-		fields=["name", "raw_data"],
+		fields=["name", "raw_data", "kodereferensi"],
 		order_by="creation asc",
 	)
+	# Rows with no kodereferensi at all are header-only status snapshots
+	# (e.g. the "BATAL INVOICE" marker row for a NOW-superseded invoice
+	# attempt - see log_so_detail_rows() in common.py), not a real item of
+	# the CURRENT invoice this summary is about. Including one here would
+	# wrongly fail header_consistent/dpp_match/grandtotal_match against
+	# the figures of an invoice that no longer applies - get_status_snapshots()
+	# below is the dedicated way to look at those, not this join.
+	rows = [r for r in rows if r.kodereferensi]
 	if not rows:
 		return None
 
@@ -124,3 +132,24 @@ def get_wo_summary(nomorwo):
 		"dpp": dpp,
 		"grandtotal": grandtotal,
 	}
+
+
+@frappe.whitelist()
+def get_status_snapshots(nomorwo):
+	"""Every header-only status snapshot archived for this Work Order
+	(kodereferensi blank - see log_so_detail_rows()'s own docstring in
+	common.py for what sends one: OtoBitz's "BATAL INVOICE" marker row
+	for an invoice attempt that's since been superseded) - powers the
+	Raw Data toggle on this form's own JS (otobitz_so_detail.js) so a
+	cancelled invoice's actual payload is directly viewable there,
+	instead of only ever being inferable from a Sales Order Comment.
+	Excludes the real item rows get_wo_summary() above already covers -
+	this is deliberately the complement of that function's own filter."""
+	frappe.only_for("System Manager")
+	rows = frappe.get_all(
+		"OtoBitz SO Detail",
+		filters={"nomorwo": nomorwo},
+		fields=["name", "nofaktur", "statuswo", "kodereferensi", "tanggal"],
+		order_by="creation desc",
+	)
+	return [r for r in rows if not r.kodereferensi]

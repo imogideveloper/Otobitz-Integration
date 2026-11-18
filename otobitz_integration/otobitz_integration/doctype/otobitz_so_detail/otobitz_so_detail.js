@@ -101,14 +101,27 @@ function sod_format_value(key, value) {
 }
 
 // ---- 1. Raw Data (Tabel): this one row's own JSON, flat & grouped ----
+//
+// A WO that's had its invoice voided-and-reissued at some point has MORE
+// than one raw payload archived under the same Nomor WO (see
+// log_so_detail_rows()'s own docstring in common.py: a header-only
+// "BATAL INVOICE" marker row, previously silently discarded, now kept
+// under its own nofaktur-keyed slot) - sod_snapshot_toggle lets this
+// Tabel view switch to show one of THOSE instead of this row's own
+// raw_data, entirely as a client-side preview. Deliberately does NOT
+// touch frm.doc.raw_data or the Code field bound to it - this stays
+// scoped to the Tabel rendering only, so there's never a question of
+// whether what's on screen is this document's real saved value.
+let sod_selected_snapshot = null;
 
 function sod_render_table(frm) {
 	const field = frm.fields_dict.raw_data_table;
 	if (!field) return;
 
+	const raw_data = sod_selected_snapshot ? sod_selected_snapshot.raw_data : frm.doc.raw_data;
 	let data;
 	try {
-		data = JSON.parse(frm.doc.raw_data || "{}");
+		data = JSON.parse(raw_data || "{}");
 	} catch (e) {
 		field.$wrapper.html(`<div class="text-muted">${__("Raw Data bukan JSON yang valid")}</div>`);
 		return;
@@ -144,7 +157,57 @@ function sod_render_table(frm) {
 			</div>`)
 		.join("");
 
-	field.$wrapper.html(`<div class="sod-table-wrap">${html}</div>`);
+	field.$wrapper.html(`${sod_build_snapshot_toggle(frm)}<div class="sod-table-wrap">${html}</div>`);
+	sod_bind_snapshot_toggle(frm, field);
+}
+
+function sod_build_snapshot_toggle(frm) {
+	const snapshots = frm._sod_snapshots || [];
+	if (!snapshots.length) return "";
+	const options = [
+		`<option value="">${__("Data baris ini (saat ini)")}</option>`,
+		...snapshots.map(
+			(s) =>
+				`<option value="${frappe.utils.escape_html(s.name)}">${frappe.utils.escape_html(s.statuswo || "-")} - ${frappe.utils.escape_html(s.nofaktur || "-")}</option>`
+		),
+	].join("");
+	const current_value = sod_selected_snapshot ? sod_selected_snapshot.name : "";
+	return `
+		<div class="sod-snapshot-toggle">
+			<label>${__("Lihat snapshot")}</label>
+			<select class="form-control sod-snapshot-select">${options}</select>
+		</div>`.replace(`value="${frappe.utils.escape_html(current_value)}"`, `value="${frappe.utils.escape_html(current_value)}" selected`);
+}
+
+function sod_bind_snapshot_toggle(frm, field) {
+	field.$wrapper.find(".sod-snapshot-select").on("change", function () {
+		const name = $(this).val();
+		if (!name) {
+			sod_selected_snapshot = null;
+			sod_render_table(frm);
+			return;
+		}
+		frappe.call({
+			method: "frappe.client.get_value",
+			args: { doctype: "OtoBitz SO Detail", filters: name, fieldname: "raw_data" },
+			callback(r) {
+				sod_selected_snapshot = { name, raw_data: r.message && r.message.raw_data };
+				sod_render_table(frm);
+			},
+		});
+	});
+}
+
+function sod_fetch_snapshots(frm) {
+	if (!frm.doc.nomorwo) return;
+	frappe.call({
+		method: "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_status_snapshots",
+		args: { nomorwo: frm.doc.nomorwo },
+		callback(r) {
+			frm._sod_snapshots = (r.message || []).filter((s) => s.name !== frm.doc.name);
+			if (frm._sod_snapshots.length) sod_render_table(frm);
+		},
+	});
 }
 
 // ---- 2. Ringkasan WO: join every sibling row for this Nomor WO ----
@@ -374,6 +437,9 @@ function sod_inject_style() {
 	const s = document.createElement("style");
 	s.id = "sod-table-style";
 	s.textContent = `
+.sod-snapshot-toggle{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.sod-snapshot-toggle label{font-size:12px;font-weight:600;color:var(--text-muted);white-space:nowrap;margin:0}
+.sod-snapshot-toggle select{max-width:320px;font-size:12px}
 .sod-table-wrap{display:flex;flex-wrap:wrap;gap:16px}
 .sod-group{flex:1 1 360px;min-width:300px}
 .sod-group-title{font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text-color)}
@@ -415,8 +481,10 @@ function sod_inject_style() {
 frappe.ui.form.on("OtoBitz SO Detail", {
 	refresh(frm) {
 		sod_inject_style();
+		sod_selected_snapshot = null;
 		sod_render_table(frm);
 		sod_render_wo_summary(frm);
+		sod_fetch_snapshots(frm);
 		if (frm.doc.statuswo) {
 			frm.page.set_indicator(frm.doc.statuswo, frm.doc.statuswo.toUpperCase() === "FAKTUR" ? "green" : "orange");
 		}
