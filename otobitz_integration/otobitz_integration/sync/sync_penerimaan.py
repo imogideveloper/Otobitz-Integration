@@ -36,6 +36,7 @@ system's own chart of accounts, not ours, and isn't something this sync can
 safely map on its own.
 """
 
+import re
 import time
 from collections import defaultdict
 
@@ -190,6 +191,25 @@ def _find_pe_by_invoice_reference(si_name: str) -> str | None:
 	return rows[0][0] if rows else None
 
 
+_FULLTEXT_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+
+
+def _fulltext_search_terms(value: str) -> str | None:
+	"""Boolean-mode MATCH ... AGAINST search string for `value` - splits on
+	non-alphanumeric characters (MySQL's own default FULLTEXT tokenizer) and
+	requires every token of 3+ characters (innodb_ft_min_token_size's
+	default) to be present with `+`, so whatever this matches is always a
+	safe superset still worth double-checking with an exact LIKE afterward.
+	A token shorter than the minimum is never indexed at all - requiring one
+	with `+` would make the whole boolean query match nothing, so those are
+	dropped rather than included. Returns None if nothing is long enough to
+	search on."""
+	terms = [t for t in _FULLTEXT_WORD_RE.findall(value) if len(t) >= 3]
+	if not terms:
+		return None
+	return " ".join(f"+{t}" for t in terms)
+
+
 def _resolve_sales_invoice(nofaktur: str) -> str | None:
 	"""Direct nofaktur match first; if that's not found, the invoice this
 	receipt's `noreferensi` names may since have been voided and reissued
@@ -200,14 +220,36 @@ def _resolve_sales_invoice(nofaktur: str) -> str | None:
 	isn't on the penerimaanuang row itself, but OtoBitz SO Detail's raw
 	archive still has the row that was fetched carrying this exact (now
 	stale) nofaktur, which gives us nomorwo - and from there, whatever Sales
-	Invoice currently exists for that Work Order (the reissued one)."""
+	Invoice currently exists for that Work Order (the reissued one).
+
+	The archive lookup narrows via a FULLTEXT MATCH first (see the
+	raw_data_fulltext index added by the
+	add_fulltext_index_so_detail_raw_data patch), THEN still checks the exact
+	`raw_data LIKE %nofaktur%` on just whatever MATCH returns - a bare LIKE
+	with a leading wildcard can never use a normal index and was a genuine,
+	recurring cost: confirmed live, 6.7s per call against ~45k rows, paid on
+	every retry of every row that doesn't directly match (i.e. every row
+	already stuck in OtoBitz Failed Sync, repeatedly, for as long as the
+	regular sync's own retry window keeps trying it). MATCH's own tokenizer
+	splits "SV-101-260400098" into separate word tokens, so it alone would be
+	looser than the exact substring this needs - the trailing LIKE keeps the
+	result identical to before, just reached via a handful of candidate rows
+	instead of a full table scan."""
 	si_name = frappe.db.get_value("Sales Invoice", {"custom_otobitz_nofaktur": nofaktur})
 	if si_name:
 		return si_name
 
+	search_terms = _fulltext_search_terms(nofaktur)
+	if not search_terms:
+		return None
 	so_detail = frappe.db.sql(
-		"""select nomorwo from `tabOtoBitz SO Detail` where raw_data like %s limit 1""",
-		(f"%{nofaktur}%",),
+		"""
+		select nomorwo from `tabOtoBitz SO Detail`
+		where match(raw_data) against (%(terms)s in boolean mode)
+			and raw_data like %(needle)s
+		limit 1
+		""",
+		{"terms": search_terms, "needle": f"%{nofaktur}%"},
 	)
 	if not so_detail:
 		return None

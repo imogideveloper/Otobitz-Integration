@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 otobitz_integration.patches.remove_towing
 otobitz_integration.patches.backfill_vehicle_owner_history
+otobitz_integration.patches.add_fulltext_index_so_detail_raw_data
