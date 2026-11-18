@@ -44,6 +44,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	log_failed_sync,
 	log_so_detail_rows,
 	renew_sync_lock,
+	resolve_branch_cost_center,
 	resolve_failed_sync,
 	safe_name,
 	sane_int,
@@ -488,7 +489,7 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(header.get("kode_cabang"))})
 	teknisi = frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": clean(header.get("kodeteknisi"))})
-	item_cost_center = _resolve_item_cost_center(company, header.get("kode_cabang"))
+	item_cost_center = resolve_branch_cost_center(company, header.get("kode_cabang"))
 	vehicle_type = _link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe"))
 	vehicle_color = _link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna"))
 	# OtoBitz Vehicle Type/Color both autoname by their own `kode` (see their
@@ -927,28 +928,9 @@ def _link_if_exists(doctype: str, value) -> str | None:
 	return None
 
 
-def _resolve_item_cost_center(company: str, kode_cabang: str | None) -> str | None:
-	"""OtoBitz's `kode_cabang` ("003", "101", ... or "AIO" for Head Office)
-	maps 1:1 onto a Cost Center already created under this Company, named
-	"{company_abbr}{kode_cabang} - {company_abbr}" (e.g. "AIO003 - AIO") -
-	except "AIO" itself (Head Office/no specific branch), which maps to the
-	Company's own default "Main - {abbr}" Cost Center instead. Verified
-	against every branch code actually in use (otoexpert.imogi.co.id,
-	2026-10-29): each one already has a matching Cost Center, no gaps.
-
-	Item cost_center previously had no sync-side value at all, so ERPNext's
-	own `default: ":Company"` on the field silently filled in the Company's
-	default Cost Center ("Main - {abbr}") on every single line, regardless
-	of which branch the Work Order actually came from - reported as "cost
-	center di link jangan isinya Main, saya mau sesuai dengan data yang
-	dari OtoBitz integration"."""
-	kode_cabang = clean(kode_cabang)
-	abbr = frappe.db.get_value("Company", company, "abbr")
-	if not abbr:
-		return None
-	if not kode_cabang or kode_cabang.upper() == abbr.upper():
-		return frappe.db.get_value("Company", company, "cost_center")
-	return _link_if_exists("Cost Center", f"{abbr}{kode_cabang} - {abbr}")
+# resolve_branch_cost_center() moved to common.py as resolve_branch_cost_center() -
+# create_purchase_order() needed the exact same branch-code-to-Cost-Center
+# mapping, so it's shared there now instead of staying private to this file.
 
 
 @frappe.whitelist()
@@ -1069,7 +1051,7 @@ def backfill_sales_invoice_posting_dates() -> dict:
 
 @frappe.whitelist()
 def backfill_item_cost_centers() -> dict:
-	"""One-off: _resolve_item_cost_center() only runs inside _create_sales_order(),
+	"""One-off: resolve_branch_cost_center() only runs inside _create_sales_order(),
 	so every Sales Order (and the Sales Invoice made from it, which copies
 	cost_center from the SO item at creation time) synced before that fix
 	shipped has every line item sitting on the Company's default "Main"
@@ -1079,7 +1061,7 @@ def backfill_item_cost_centers() -> dict:
 
 	Driven by the Sales Order's own already-linked custom_otobitz_branch -
 	no API call needed, same branch code -> Cost Center mapping
-	_resolve_item_cost_center() uses for new syncs. Sales Invoice items are
+	resolve_branch_cost_center() uses for new syncs. Sales Invoice items are
 	fixed the same way, keyed off their own Sale Order link rather than
 	assumed to equal the SO's value, since an invoice can in principle be
 	edited to a different cost center than the order it came from."""
@@ -1092,7 +1074,7 @@ def backfill_item_cost_centers() -> dict:
 		fields=["name", "company", "custom_otobitz_branch"],
 	):
 		kode_cabang = frappe.db.get_value("Branch", so.custom_otobitz_branch, "custom_otobitz_branch_code")
-		cost_center = _resolve_item_cost_center(so.company, kode_cabang)
+		cost_center = resolve_branch_cost_center(so.company, kode_cabang)
 		if not cost_center:
 			continue
 
