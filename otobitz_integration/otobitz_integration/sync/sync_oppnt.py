@@ -203,6 +203,7 @@ def _create_order(nomor: str, row: dict) -> str:
 		transaction_date=getdate(row.get("tanggal")),
 		items=items,
 		branch=branch,
+		kode_cabang=clean(row.get("kodecabang")),
 		sales_order=sales_order,
 		taxes_and_charges_template=TAXES_AND_CHARGES_TEMPLATE,
 		source_document=nomor,

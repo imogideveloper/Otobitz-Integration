@@ -144,5 +144,6 @@ def _create_order(nomor: str, row: dict) -> str:
 		transaction_date=getdate(row.get("tanggal")),
 		items=items,
 		branch=branch,
+		kode_cabang=clean(row.get("kodecabang")),
 		taxes_and_charges_template=TAXES_AND_CHARGES_TEMPLATE,
 	)

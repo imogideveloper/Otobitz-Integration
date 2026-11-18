@@ -466,6 +466,40 @@ def sync_so_payment_status(si_name: str) -> None:
 			frappe.db.set_value("Sales Order", so_name, "status", "Paid", update_modified=False)
 
 
+def resolve_branch_cost_center(company: str, kode_cabang: str | None) -> str | None:
+	"""OtoBitz's `kode_cabang` ("003", "101", ... or "AIO" for Head Office)
+	maps 1:1 onto a Cost Center already created under this Company, named
+	"{company_abbr}{kode_cabang} - {company_abbr}" (e.g. "AIO003 - AIO") -
+	except "AIO" itself (Head Office/no specific branch), which maps to the
+	Company's own default "Main - {abbr}" Cost Center instead. Verified
+	against every branch code actually in use (otoexpert.imogi.co.id,
+	2026-10-29): each one already has a matching Cost Center, no gaps.
+
+	Shared by both Sales Order/Invoice items (sync_service_orders.py, where
+	this was first written - leaving no cost_center at all let ERPNext's own
+	`default: ":Company"` on the field silently fill in the Company's
+	default Cost Center on every line regardless of which branch a Work
+	Order actually came from) and Purchase Order items (create_purchase_order()
+	below - its PO items had the same "no cost_center at all" gap, which on
+	this site surfaces as a hard failure rather than a silent wrong value:
+	Purchase Order approval here requires resolving an actual Cost Center to
+	find a matching Approval Setting rule, and a blank one has none to find
+	- confirmed live, error "No active Approval Setting with a purchase
+	(RFQ/PO) line for Cost Center (none) or a group above it", 81 queued
+	masterdata_orderparts/masterdata_orderpekerjaanluar rows stuck in
+	OtoBitz Failed Sync for exactly this reason)."""
+	kode_cabang = clean(kode_cabang)
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	if not abbr:
+		return None
+	if not kode_cabang or kode_cabang.upper() == abbr.upper():
+		return frappe.db.get_value("Company", company, "cost_center")
+	candidate = f"{abbr}{kode_cabang} - {abbr}"
+	if frappe.db.exists("Cost Center", candidate):
+		return candidate
+	return None
+
+
 def create_purchase_order(
 	*,
 	order_number: str,
@@ -474,6 +508,7 @@ def create_purchase_order(
 	transaction_date,
 	items: list[dict],
 	branch: str | None = None,
+	kode_cabang: str | None = None,
 	sales_order: str | None = None,
 	taxes_and_charges_template: str | None = None,
 	source_document: str | None = None,
@@ -490,7 +525,11 @@ def create_purchase_order(
 	`nomor`, the "GL..." code) - confirmed against OtoBitz's live Odoo that
 	Source Document on a Purchase Order is only ever populated for orders
 	that came from Pekerjaan Luar, never from Order Parts (that source
-	doesn't carry an equivalent reference)."""
+	doesn't carry an equivalent reference).
+
+	kode_cabang: resolved to a Cost Center via resolve_branch_cost_center()
+	and stamped onto every item - see that function's own docstring for why
+	this is required here, not just nice-to-have."""
 	po = frappe.new_doc("Purchase Order")
 	po.company = company
 	po.supplier = supplier
@@ -505,7 +544,10 @@ def create_purchase_order(
 		po.custom_source_document = source_document
 	set_period_fields(po, transaction_date)
 
+	cost_center = resolve_branch_cost_center(company, kode_cabang)
 	for item in items:
+		if cost_center:
+			item["cost_center"] = cost_center
 		po.append("items", item)
 
 	if not po.items:
