@@ -41,7 +41,7 @@ from collections import defaultdict
 
 import frappe
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_bank_cash_account, get_payment_entry
-from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
+from frappe.utils import add_days, cint, flt, get_first_day, getdate, now_datetime, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
@@ -408,4 +408,107 @@ def backfill_split_penerimaan(from_date=None, to_date=None, dry_run=1) -> dict:
 
 	if not dry_run:
 		frappe.db.commit()
+	return report
+
+
+@frappe.whitelist()
+def cleanup_missing_invoice_failures(min_age_days: int = 7, dry_run: int = 1) -> dict:
+	"""Maintenance tool for the "Sales Invoice belum ada saat sync payment"
+	Failed Sync category: once a penerimaanuang row's own date rolls more
+	than OVERLAP_DAYS=3 days behind the sync's moving window, sync_penerimaan()
+	never fetches that row again - its Failed Sync record just sits there
+	forever, even once the missing Sales Invoice is genuinely never coming.
+	Confirmed live: nofaktur SV-101-260400098 was retried 890 times between
+	2026-10-27 and 2026-11-06, then never again (rolled out of the window) -
+	no Sales Invoice with that nofaktur exists, and OtoBitz SO Detail's own
+	raw archive has zero rows mentioning it anywhere, meaning the underlying
+	Work Order was never even fetched by otoxpertsoandpart in the first
+	place, not just "not yet".
+
+	For every such Failed Sync row older than `min_age_days` (comfortably
+	past the 3-day retry window, so the regular hourly sync has already
+	given up on it on its own):
+	  1. Re-run _resolve_sales_invoice() right now, in case the invoice has
+	     since appeared through some other path (a later full resync, a
+	     manual fix, ...) - if so, actually finish the payment sync instead
+	     of leaving it to rot.
+	  2. If still missing, delete the Failed Sync row outright - this old,
+	     it is confirmed never coming back (see this function's own
+	     docstring above), and leaving it keeps burying the OTHER failure
+	     categories that ARE still actionable (missing Approval Setting,
+	     unresolvable Items, ...) under a wall of permanently-dead noise.
+
+	Rows younger than `min_age_days` are left completely alone - the regular
+	hourly sync is still actively retrying those on its own, no need to
+	second-guess it early.
+
+	dry_run=1 (default): reports only, deletes/resyncs nothing. dry_run=0:
+	actually resyncs the ones that resolve and deletes the ones confirmed
+	gone."""
+	import json
+
+	frappe.only_for("System Manager")
+	dry_run = cint(dry_run)
+	cutoff = add_days(now_datetime(), -cint(min_age_days))
+
+	report = {
+		"min_age_days": cint(min_age_days),
+		"dry_run": bool(dry_run),
+		"checked": 0,
+		"resynced": 0,
+		"resynced_amount": 0.0,
+		"deleted": 0,
+		"errors": [],
+		"details": [],
+	}
+
+	rows = frappe.get_all(
+		"OtoBitz Failed Sync",
+		filters={
+			"endpoint": "penerimaanuang",
+			"error_category": "Sales Invoice belum ada saat sync payment",
+			"first_failed_at": ["<", cutoff],
+		},
+		fields=["name", "record_key", "raw_data"],
+	)
+
+	for fs in rows:
+		report["checked"] += 1
+		try:
+			row = json.loads(fs.raw_data) if fs.raw_data else {}
+		except Exception:
+			report["errors"].append(f"{fs.name}: raw_data not valid JSON")
+			continue
+
+		record_key = fs.record_key or ""
+		nomor = clean(row.get("nomor")) or (record_key.split("|")[0] if record_key else None)
+		nofaktur = clean(row.get("noreferensi"))
+		if not nomor or not nofaktur:
+			report["errors"].append(f"{fs.name}: missing nomor/noreferensi on the archived row")
+			continue
+
+		si_name = _resolve_sales_invoice(nofaktur)
+		if si_name:
+			report["details"].append(
+				{"failed_sync": fs.name, "nomor": nomor, "nofaktur": nofaktur, "action": "resync", "sales_invoice": si_name}
+			)
+			report["resynced"] += 1
+			report["resynced_amount"] += flt(row.get("nilaipenerimaan"))
+			if not dry_run:
+				try:
+					_sync_one_receipt(nomor, row)
+					frappe.db.commit()
+					resolve_failed_sync("penerimaanuang", record_key)
+					frappe.db.commit()
+				except Exception as exc:
+					frappe.db.rollback()
+					report["errors"].append(f"{fs.name}: {exc}")
+			continue
+
+		report["details"].append({"failed_sync": fs.name, "nomor": nomor, "nofaktur": nofaktur, "action": "delete"})
+		report["deleted"] += 1
+		if not dry_run:
+			frappe.delete_doc("OtoBitz Failed Sync", fs.name, ignore_permissions=True, force=True)
+			frappe.db.commit()
+
 	return report
