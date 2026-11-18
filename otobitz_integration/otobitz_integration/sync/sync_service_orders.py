@@ -603,9 +603,26 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	sales_item_tax_template = (
 		SALES_ITEM_TAX_TEMPLATE if frappe.db.exists("Item Tax Template", SALES_ITEM_TAX_TEMPLATE) else None
 	)
+	# Tracks rows that named a real item_code which just isn't in our Item
+	# master yet (NOT rows with no kodereferensi at all, e.g. a header-only
+	# row - those are expected and not a data-loss signal). Confirmed live:
+	# a WO can have SOME items resolve and others not (previously a totally
+	# silent `continue`, no throw, since `if not so.items` only fires when
+	# EVERY item fails) - the Sales Order still gets created "successfully"
+	# with whichever items DID resolve, but short by however much the
+	# missing ones were worth. That missing amount doesn't vanish - it gets
+	# absorbed into the Pembulatan tax row (grand_total - dpp - ppn), which
+	# is where it actually surfaced: SO-112-261100114 showed a nonsense
+	# Rp2,676,590 "rounding" that was exactly the combined subtotal of 3
+	# items (112TYC10002/3/4, a parts series never onboarded into the Item
+	# master) silently dropped from a 7-item WO.
+	unresolved_item_codes = []
 	for row in wo_rows:
 		item_code = clean(row.get("kodereferensi"))
-		if not item_code or not frappe.db.exists("Item", item_code):
+		if not item_code:
+			continue
+		if not frappe.db.exists("Item", item_code):
+			unresolved_item_codes.append(item_code)
 			continue
 		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Units"
 		# `harga` is the gross per-unit price and `discperitem` a per-unit
@@ -711,6 +728,19 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 
 	if not so.items:
 		frappe.throw(f"No resolvable Items for Work Order {nomorwo}")
+	if unresolved_item_codes:
+		# Same error prefix as the all-items-missing throw above on purpose -
+		# categorize_error() in common.py matches on that exact leading
+		# phrase, so this lands in the same "Item tidak bisa di-resolve dari
+		# WO" Failed Sync bucket rather than "Lainnya". Aborting the whole WO
+		# here (not just logging a warning and keeping the partial Sales
+		# Order) is deliberate: a WO missing items is wrong in a way that's
+		# much worse silent than absent - see this function's own note above
+		# unresolved_item_codes for the real money this already cost once.
+		frappe.throw(
+			f"No resolvable Items for Work Order {nomorwo} - "
+			f"missing from Item master: {', '.join(unresolved_item_codes)}"
+		)
 
 	# Same tax template as the Sales Invoice - without this the Sales Order's
 	# own grand_total is net-of-tax only, which doesn't match either OtoBitz's
@@ -872,7 +902,7 @@ def force_resync_wo(nomorwo: str) -> dict:
 
 	so_name = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 	si_name = frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
-	deleted = {"sales_order": None, "sales_invoice": None, "payment_entries": []}
+	deleted = {"sales_order": None, "sales_invoice": None, "payment_entries": [], "purchase_orders_cancelled": []}
 
 	if si_name:
 		pe_names = frappe.get_all(
@@ -894,6 +924,23 @@ def force_resync_wo(nomorwo: str) -> dict:
 		deleted["sales_invoice"] = si_name
 
 	if so_name:
+		# masterdata_orderpekerjaanluar/masterdata_oppnt stamp
+		# custom_otobitz_sales_order on the Purchase Order they build (see
+		# create_purchase_order()'s own `sales_order` param in common.py) -
+		# a submitted one left in place blocks cancelling/deleting this
+		# Sales Order outright ("Cannot delete or cancel because ... is
+		# linked with Purchase Order ..."), confirmed live on 3 of 41 WOs
+		# in one bulk resync run. Cancelled (not deleted) rather than
+		# recreated here - that PO's own data is still valid, this
+		# function's job is the Sales Order/Invoice/Payment Entry triple,
+		# not re-syncing Purchase Orders too.
+		linked_pos = frappe.get_all(
+			"Purchase Order", filters={"custom_otobitz_sales_order": so_name, "docstatus": 1}, pluck="name"
+		)
+		for po_name in linked_pos:
+			frappe.get_doc("Purchase Order", po_name).cancel()
+			deleted["purchase_orders_cancelled"].append(po_name)
+
 		so = frappe.get_doc("Sales Order", so_name)
 		if so.docstatus == 1:
 			so.cancel()
