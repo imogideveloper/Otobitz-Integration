@@ -9,6 +9,7 @@
  "field_order": [
   "dedup_key",
   "endpoint",
+  "is_wo_summary_row",
   "wo_summary_html",
   "section_break_wo",
   "nomorwo",
@@ -57,6 +58,16 @@
    "label": "Endpoint",
    "options": "otoxpertsoandpart\notoxpertsoandpartnondecrypt",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "1 baris per Nomor WO + No. Faktur (bukan per item) - inilah yang ditampilkan di List View, lihat get_permission_query_conditions() di otobitz_so_detail.py. Baris status (BATAL INVOICE, tanpa kodereferensi) sudah 1-per-key secara alami jadi langsung ditandai sendiri; satu baris ringkasan tambahan dibuat untuk tiap grup item FAKTUR - lihat log_so_detail_rows() di common.py.",
+   "fieldname": "is_wo_summary_row",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Baris Ringkasan (List View)",
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "wo_summary_html",

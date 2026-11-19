@@ -35,7 +35,26 @@ def get_user_branches(user: str) -> list[dict]:
 
 @frappe.whitelist()
 def add_user_branch(user: str, branch: str) -> None:
+	"""`branch="ALL"` is special-cased: "ALL" is a real row in the Branch
+	doctype (a sentinel, not an actual OtoBitz branch - nothing ever has it
+	as its own Branch value), added purely so it shows up as a pickable
+	option in the "Tambah Akses Cabang" dialog's Link field. Picking it
+	literally, as a single User Permission row, would backfire completely -
+	Frappe's permission engine would then restrict this user to ONLY
+	documents whose Branch is literally "ALL", i.e. nothing at all, the
+	opposite of what picking "ALL" obviously means here. So it expands into
+	one row per real Branch instead - every actual branch ends up individually
+	assigned (visible as a chip each, and selectable in the navbar switcher),
+	which is also what "sees every branch" ends up meaning permission-wise."""
 	frappe.only_for("System Manager")
+	if branch == "ALL":
+		for real_branch in frappe.get_all("Branch", filters={"name": ["!=", "ALL"]}, pluck="name"):
+			_add_user_branch_row(user, real_branch)
+		return
+	_add_user_branch_row(user, branch)
+
+
+def _add_user_branch_row(user: str, branch: str) -> None:
 	if frappe.db.exists("User Permission", {"user": user, "allow": "Branch", "for_value": branch}):
 		return
 	frappe.get_doc(

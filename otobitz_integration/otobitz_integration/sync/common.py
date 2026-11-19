@@ -586,20 +586,48 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 	(one Work Order's rows are always distinct per item code - see the
 	masterdata_sparepart-style flat-join notes in sync_service_orders.py) so a
 	re-fetch of the same window (the sync's own overlap days, or a manual
-	re-run) updates the existing row in place instead of duplicating it."""
+	re-run) updates the existing row in place instead of duplicating it.
+
+	Every individual item/status row is still archived exactly as before -
+	none of that fidelity is lost. On top of that, one extra `is_wo_summary_row`
+	row per (`nomorwo`, `nofaktur`) item group is upserted (see
+	_upsert_wo_summary_row() below) so the List View - restricted to
+	`is_wo_summary_row=1` rows by get_permission_query_conditions() in
+	otobitz_so_detail.py - shows exactly one row per Work Order/invoice
+	attempt instead of one per raw item. A "BATAL INVOICE" status row doesn't
+	need one of these: it's already 1-per-key on its own, so it's flagged
+	`is_wo_summary_row=1` directly instead."""
 	import json
 
 	logged = 0
+	summary_groups: set[tuple[str, str]] = set()
 	for row in rows:
 		nomorwo = clean(row.get("nomorwo"))
-		kodereferensi = clean(row.get("kodereferensi"))
-		if not nomorwo or not kodereferensi:
+		if not nomorwo:
 			continue
-		dedup_key = f"{nomorwo}|{kodereferensi}"
+		kodereferensi = clean(row.get("kodereferensi"))
+		nofaktur = clean(row.get("nofaktur"))
+		if kodereferensi:
+			dedup_key = f"{nomorwo}|{kodereferensi}"
+		elif nofaktur:
+			# A header-only row with no item at all - confirmed live,
+			# OtoBitz sends exactly this shape for the "BATAL INVOICE"
+			# marker row ahead of the real item rows once an invoice is
+			# voided (kodereferensi/namareferensi/harga/qty/subtotal all
+			# blank or zero, but nofaktur/statuswo/dpp/ppn/grandtotal
+			# still carry that specific invoice attempt's own figures).
+			# Previously silently discarded by the `not kodereferensi`
+			# check above - archived under its own nofaktur-keyed slot
+			# instead, so a cancelled invoice's snapshot stays visible/
+			# selectable here too (see otobitz_so_detail.js's status
+			# toggle), not just inferable from a Sales Order Comment.
+			dedup_key = f"{nomorwo}|STATUS|{nofaktur}"
+		else:
+			continue
 		values = {
 			"endpoint": endpoint,
 			"nomorwo": nomorwo,
-			"nofaktur": clean(row.get("nofaktur")),
+			"nofaktur": nofaktur,
 			"tanggal": getdate(row.get("tanggal")) if row.get("tanggal") else None,
 			"statuswo": clean(row.get("statuswo")),
 			"kode_cabang": clean(row.get("kode_cabang")),
@@ -608,7 +636,7 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 			"customer_name": clean(row.get("nama")),
 			"nopolisi": clean(row.get("nopolisi")),
 			"kodereferensi": kodereferensi,
-			"namareferensi": clean(row.get("namareferensi")),
+			"namareferensi": clean(row.get("namareferensi")) or (None if kodereferensi else "(Baris status - tidak ada item)"),
 			"jenisdoc": clean(row.get("jenisdoc")),
 			"qty": flt(row.get("qty")),
 			"harga": flt(row.get("harga")),
@@ -617,15 +645,112 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 			"grandtotal": flt(row.get("grandtotal")),
 			"nilaipenerimaan": flt(row.get("nilaipenerimaan")),
 			"sisapiutang": flt(row.get("sisapiutang")),
+			"is_wo_summary_row": 0 if kodereferensi else 1,
 			"raw_data": json.dumps(row, default=str, ensure_ascii=False),
 		}
 		values = {k: v for k, v in values.items() if v is not None}
 		try:
 			upsert("OtoBitz SO Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
 			logged += 1
+			if kodereferensi and nofaktur:
+				summary_groups.add((nomorwo, nofaktur))
 		except Exception:
 			frappe.log_error(title=f"OtoBitz sync: failed to archive SO Detail row {dedup_key}")
+
+	for nomorwo, nofaktur in summary_groups:
+		_upsert_wo_summary_row(nomorwo, nofaktur, endpoint)
+
 	return logged
+
+
+def _upsert_wo_summary_row(nomorwo: str, nofaktur: str, endpoint: str) -> None:
+	"""One extra `OtoBitz SO Detail` row per (`nomorwo`, `nofaktur`) item
+	group, flagged `is_wo_summary_row=1` - see log_so_detail_rows()'s own
+	docstring above for why this exists. Always recomputed from every
+	matching item row currently in the DB (not just whatever subset was in
+	the current sync batch), so it stays correct across repeat hourly runs
+	and partial re-syncs alike - the same reason get_wo_summary() re-queries
+	fresh rather than trusting one call's own rows."""
+	import json
+
+	item_rows = frappe.get_all(
+		"OtoBitz SO Detail",
+		filters={"nomorwo": nomorwo, "nofaktur": nofaktur, "kodereferensi": ["is", "set"]},
+		fields=["raw_data"],
+		order_by="creation asc",
+	)
+	parsed = []
+	for r in item_rows:
+		try:
+			parsed.append(json.loads(r.raw_data or "{}"))
+		except ValueError:
+			continue
+	if not parsed:
+		return
+
+	header = parsed[0]
+	values = {
+		"endpoint": endpoint,
+		"nomorwo": nomorwo,
+		"nofaktur": nofaktur,
+		"tanggal": getdate(header.get("tanggal")) if header.get("tanggal") else None,
+		"statuswo": clean(header.get("statuswo")),
+		"kode_cabang": clean(header.get("kode_cabang")),
+		"namacabang": clean(header.get("namacabang")),
+		"teknisi": clean(header.get("teknisi")),
+		"customer_name": clean(header.get("nama")),
+		"nopolisi": clean(header.get("nopolisi")),
+		"namareferensi": f"Ringkasan - {len(parsed)} item",
+		"subtotal": sum(flt(p.get("subtotal")) for p in parsed),
+		"grandtotal": flt(header.get("grandtotal")),
+		"nilaipenerimaan": flt(header.get("nilaipenerimaan")),
+		"sisapiutang": flt(header.get("sisapiutang")),
+		"is_wo_summary_row": 1,
+		"raw_data": json.dumps(header, default=str, ensure_ascii=False),
+	}
+	values = {k: v for k, v in values.items() if v is not None}
+	dedup_key = f"{nomorwo}|SUMMARY|{nofaktur}"
+	try:
+		upsert("OtoBitz SO Detail", {"dedup_key": dedup_key}, values, ignore_mandatory=True)
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to upsert SO Detail summary row {dedup_key}")
+
+
+@frappe.whitelist()
+def backfill_wo_summary_rows() -> dict:
+	"""One-off: `is_wo_summary_row` and the per-(nomorwo, nofaktur) summary
+	rows only started getting created once this field/mechanism existed -
+	every WO archived before that has neither, which would leave it invisible
+	in the now is_wo_summary_row=1-only List View (see
+	get_permission_query_conditions() in otobitz_so_detail.py). Run once after
+	deploying the field; log_so_detail_rows() keeps both correct for every
+	WO/invoice synced from here on."""
+	frappe.only_for("System Manager")
+
+	frappe.db.sql(
+		"""
+		update `tabOtoBitz SO Detail`
+		set is_wo_summary_row = 1
+		where (kodereferensi is null or kodereferensi = '')
+		  and ifnull(is_wo_summary_row, 0) = 0
+		"""
+	)
+	frappe.db.commit()
+
+	groups = frappe.db.sql(
+		"""
+		select distinct nomorwo, nofaktur, endpoint from `tabOtoBitz SO Detail`
+		where kodereferensi is not null and kodereferensi != ''
+		  and nofaktur is not null and nofaktur != ''
+		""",
+		as_dict=True,
+	)
+	for i, g in enumerate(groups):
+		_upsert_wo_summary_row(g.nomorwo, g.nofaktur, g.endpoint)
+		if i % 200 == 0:
+			frappe.db.commit()
+	frappe.db.commit()
+	return {"groups_processed": len(groups)}
 
 
 def log_receipt_detail_row(endpoint: str, row: dict) -> bool:

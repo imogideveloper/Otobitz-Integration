@@ -147,6 +147,84 @@ function sod_render_table(frm) {
 	field.$wrapper.html(`<div class="sod-table-wrap">${html}</div>`);
 }
 
+// A WO that's had its invoice voided-and-reissued at some point has MORE
+// than one raw payload archived under the same Nomor WO (see
+// log_so_detail_rows()'s own docstring in common.py: a header-only
+// "BATAL INVOICE" marker row, previously silently discarded, now kept
+// under its own nofaktur-keyed slot). sod_selected_snapshot drives the
+// toggle INSIDE the Ringkasan WO summary (not this raw-data table -
+// moved there on request: "jangan di table itu... di sini berubah
+// nilainya") - picking one overlays its own header fields (status,
+// faktur, dpp/ppn/grandtotal, ...) onto the Work Order/Total & Pembayaran
+// sections specifically. Customer/Kendaraan/Cabang/Items stay showing the
+// real underlying Work Order's own data regardless of which invoice
+// attempt is being viewed - those don't change between a cancelled
+// invoice and its replacement, only the invoice-level fields do.
+let sod_selected_snapshot = null;
+
+function sod_build_snapshot_toggle(frm) {
+	const snapshots = frm._sod_snapshots || [];
+	if (!snapshots.length) return "";
+	const current_value = sod_selected_snapshot ? sod_selected_snapshot.name : "";
+	const option = (value, label, selected) =>
+		`<option value="${frappe.utils.escape_html(value)}"${selected ? " selected" : ""}>${label}</option>`;
+	const options = [
+		option("", __("Invoice saat ini (aktif)"), !current_value),
+		...snapshots.map((s) =>
+			option(s.name, `${frappe.utils.escape_html(s.statuswo || "-")} - ${frappe.utils.escape_html(s.nofaktur || "-")}`, s.name === current_value)
+		),
+	].join("");
+	return `
+		<div class="sod-snapshot-toggle">
+			<label>${__("Lihat snapshot invoice")}</label>
+			<select class="form-control sod-snapshot-select">${options}</select>
+		</div>`;
+}
+
+function sod_bind_snapshot_toggle(frm, field) {
+	field.$wrapper.find(".sod-snapshot-select").on("change", function () {
+		const name = $(this).val();
+		if (!name) {
+			sod_selected_snapshot = null;
+			sod_render_wo_summary(frm, true);
+			return;
+		}
+		frappe.call({
+			method: "frappe.client.get_value",
+			args: { doctype: "OtoBitz SO Detail", filters: name, fieldname: "raw_data" },
+			callback(r) {
+				let data = {};
+				try {
+					data = JSON.parse((r.message && r.message.raw_data) || "{}");
+				} catch (e) {
+					data = {};
+				}
+				sod_selected_snapshot = { name, data };
+				sod_render_wo_summary(frm, true);
+			},
+		});
+	});
+}
+
+function sod_fetch_snapshots(frm) {
+	if (!frm.doc.nomorwo) return;
+	frappe.call({
+		method: "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_status_snapshots",
+		args: { nomorwo: frm.doc.nomorwo },
+		callback(r) {
+			// get_status_snapshots() never returns a FAKTUR-status row, so
+			// this document itself only ever shows up here when IT is one
+			// of these non-current snapshots - keeping it in the list
+			// (rather than filtering it out like an earlier version of
+			// this did) is what lets the dropdown actually highlight it as
+			// the selected option below, matching the pre-selection
+			// refresh() already made.
+			frm._sod_snapshots = r.message || [];
+			if (frm._sod_snapshots.length) sod_render_wo_summary(frm, true);
+		},
+	});
+}
+
 // ---- 2. Ringkasan WO: join every sibling row for this Nomor WO ----
 
 function sod_fmt_datetime(value) {
@@ -186,14 +264,29 @@ function sod_check_chip(ok, label) {
 	return `<span class="wo-chip ${ok ? "wo-chip-ok" : "wo-chip-fail"}">${icon} ${frappe.utils.escape_html(label)}</span>`;
 }
 
-function sod_render_wo_summary(frm) {
+function sod_render_wo_summary(frm, use_cache) {
 	const field = frm.fields_dict.wo_summary_html;
 	if (!field) return;
 	if (!frm.doc.nomorwo) {
 		field.$wrapper.html("");
 		return;
 	}
-	if (frm._wo_summary_nomorwo === frm.doc.nomorwo) return;
+
+	const render = (res) => {
+		sod_inject_style();
+		field.$wrapper.html(sod_build_wo_summary_html(frm, res));
+		field.$wrapper.find(".wo-item-row").on("click", function () {
+			const name = $(this).attr("data-name");
+			if (name && name !== frm.doc.name) frappe.set_route("otobitz-so-detail", name);
+		});
+		sod_bind_snapshot_toggle(frm, field);
+	};
+
+	if (use_cache && frm._sod_base_summary) {
+		render(frm._sod_base_summary);
+		return;
+	}
+	if (frm._wo_summary_nomorwo === frm.doc.nomorwo && frm._sod_base_summary) return;
 	frm._wo_summary_nomorwo = frm.doc.nomorwo;
 
 	frappe.call({
@@ -201,23 +294,27 @@ function sod_render_wo_summary(frm) {
 		args: { nomorwo: frm.doc.nomorwo },
 		callback(r) {
 			if (!r.message) return;
-			sod_inject_style();
-			field.$wrapper.html(sod_build_wo_summary_html(frm, r.message));
-			field.$wrapper.find(".wo-item-row").on("click", function () {
-				const name = $(this).attr("data-name");
-				if (name && name !== frm.doc.name) frappe.set_route("otobitz-so-detail", name);
-			});
+			frm._sod_base_summary = r.message;
+			render(r.message);
 		},
 	});
 }
 
 function sod_build_wo_summary_html(frm, res) {
-	const h = res.header;
+	// Viewing a cancelled-invoice snapshot overlays ITS OWN fields on top
+	// of the real header for display only - res.header itself (the
+	// cached fetch result) is never mutated, so switching back to
+	// "Invoice saat ini" always shows the real, untouched current data.
+	const h = sod_selected_snapshot ? { ...res.header, ...sod_selected_snapshot.data } : res.header;
+	const viewing_snapshot = !!sod_selected_snapshot;
 
 	const indicator_color = (h.statuswo || "").toUpperCase() === "FAKTUR" ? "green" : "orange";
 
-	const checks = `
-		<div class="wo-checks">
+	const snapshot_toggle = sod_build_snapshot_toggle(frm);
+
+	const checks = viewing_snapshot
+		? `<div class="wo-snapshot-note">${__("Menampilkan snapshot invoice yang sudah tidak berlaku lagi (sudah dibatalkan/diganti OtoBitz) - cek konsistensi di bawah mengacu ke invoice yang AKTIF saat ini, bukan snapshot ini.")}</div>`
+		: `<div class="wo-checks">
 			${sod_check_chip(res.header_consistent, __("Header sama di {0} baris JSON", [res.items.length]))}
 			${sod_check_chip(res.dpp_match, __("Σ Subtotal = DPP"))}
 			${sod_check_chip(res.grandtotal_match, __("Σ Item + PPN = Grand Total"))}
@@ -366,7 +463,7 @@ function sod_build_wo_summary_html(frm, res) {
 			</div>
 		</div>`;
 
-	return `<div class="wo-summary">${checks}${work_order}${cabang}${customer_kendaraan}${items}${total}</div>`;
+	return `<div class="wo-summary">${snapshot_toggle}${checks}${work_order}${cabang}${customer_kendaraan}${items}${total}</div>`;
 }
 
 function sod_inject_style() {
@@ -374,6 +471,9 @@ function sod_inject_style() {
 	const s = document.createElement("style");
 	s.id = "sod-table-style";
 	s.textContent = `
+.sod-snapshot-toggle{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.sod-snapshot-toggle label{font-size:12px;font-weight:600;color:var(--text-muted);white-space:nowrap;margin:0}
+.sod-snapshot-toggle select{max-width:320px;font-size:12px}
 .sod-table-wrap{display:flex;flex-wrap:wrap;gap:16px}
 .sod-group{flex:1 1 360px;min-width:300px}
 .sod-group-title{font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text-color)}
@@ -382,6 +482,7 @@ function sod_inject_style() {
 .sod-table .sod-label{width:45%;color:var(--text-muted);white-space:nowrap}
 
 .wo-summary{display:flex;flex-direction:column;gap:20px;padding-bottom:8px}
+.wo-snapshot-note{background:var(--bg-orange, #fef1e3);color:var(--text-on-orange, #d9822b);border-radius:8px;padding:10px 14px;font-size:12.5px;font-weight:500}
 .wo-checks{display:flex;flex-wrap:wrap;gap:8px}
 .wo-chip{font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;display:inline-flex;align-items:center;gap:4px}
 .wo-chip-ok{background:var(--bg-green, #e6f4ea);color:var(--text-on-light-green, #137333)}
@@ -415,8 +516,36 @@ function sod_inject_style() {
 frappe.ui.form.on("OtoBitz SO Detail", {
 	refresh(frm) {
 		sod_inject_style();
+		// Opening a non-current status row's OWN form directly (from the
+		// List View, say - not via the snapshot dropdown on the live
+		// FAKTUR summary) used to always reset to "Invoice saat ini
+		// (aktif)" here regardless of which document this actually is -
+		// the breadcrumb badge correctly showed e.g. "BATAL INVOICE" (that
+		// comes straight from frm.doc.statuswo below), but the Items/Total
+		// table underneath kept showing the CURRENT invoice's shared item
+		// rows instead of this cancelled invoice's own totals, since
+		// get_wo_summary() only ever returns the WO's real (invoice-
+		// attempt-agnostic) item rows. Pre-selecting THIS document's own
+		// raw_data as the snapshot whenever it's itself a header-only,
+		// non-FAKTUR row (a real item row with kodereferensi is always
+		// the current invoice's own line, never a stale one - see
+		// log_so_detail_rows()'s docstring in common.py) means the summary
+		// actually reflects the document being viewed.
+		const is_own_snapshot = !frm.doc.kodereferensi && (frm.doc.statuswo || "").trim().toUpperCase() !== "FAKTUR";
+		if (is_own_snapshot) {
+			let data = {};
+			try {
+				data = JSON.parse(frm.doc.raw_data || "{}");
+			} catch (e) {
+				data = {};
+			}
+			sod_selected_snapshot = { name: frm.doc.name, data };
+		} else {
+			sod_selected_snapshot = null;
+		}
 		sod_render_table(frm);
 		sod_render_wo_summary(frm);
+		sod_fetch_snapshots(frm);
 		if (frm.doc.statuswo) {
 			frm.page.set_indicator(frm.doc.statuswo, frm.doc.statuswo.toUpperCase() === "FAKTUR" ? "green" : "orange");
 		}

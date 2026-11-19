@@ -51,7 +51,8 @@ app_include_js = [
 	"/assets/otobitz_integration/js/otobitz_screenshot.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_raw_data_view.js?v=2",
 	"/assets/otobitz_integration/js/otobitz_view_raw_json.js?v=3",
-	"/assets/otobitz_integration/js/otobitz_branch_switcher.js?v=4",
+	"/assets/otobitz_integration/js/otobitz_branch_switcher.js?v=7",
+	"/assets/otobitz_integration/js/otobitz_field_description_icon.js?v=1",
 ]
 
 # include js, css files in header of web template
@@ -157,10 +158,10 @@ after_app_install = "otobitz_integration.install.after_app_install"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
+permission_query_conditions = {
+	"OtoBitz SO Detail": "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_permission_query_conditions",
+}
+
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
