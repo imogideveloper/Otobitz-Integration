@@ -40,6 +40,8 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	clean,
 	clean_or_none,
 	get_or_create_customer_address,
+	get_or_create_item_group,
+	get_or_create_uom,
 	get_or_create_vehicle,
 	log_failed_sync,
 	log_so_detail_rows,
@@ -382,6 +384,11 @@ def _sync_one_wo(
 			if current_nofaktur:
 				_replace_stale_invoice(existing_so, nomorwo, current_nofaktur)
 			_create_sales_invoice(nomorwo, existing_so, header)
+		# Unconditional (not nested under `if not has_current_invoice`) so an
+		# already-fully-synced WO still gets backfilled on its next regular
+		# pass - see this function's own docstring for the live-caught case
+		# (_replace_stale_invoice above) it complements, not replaces.
+		_backfill_historical_cancelled_invoices(existing_so, nomorwo, current_nofaktur)
 	elif statuswo == "BATAL INVOICE":
 		_note_invoice_cancelled(existing_so, nomorwo, header)
 
@@ -459,6 +466,153 @@ def _replace_stale_invoice(so_name: str, nomorwo: str, current_nofaktur: str) ->
 			}
 		).insert(ignore_permissions=True)
 	return stale
+
+
+HISTORICAL_INVOICE_ITEM_CODE = "OTOBITZ-INVOICE-DIBATALKAN"
+
+
+def _backfill_historical_cancelled_invoices(so_name: str, nomorwo: str, current_nofaktur: str | None) -> list[str]:
+	"""Complements _replace_stale_invoice() above for the case that one can't
+	reach at all: a Work Order whose invoice was ALREADY cancelled and
+	reissued before our sync ever processed it for the first time (confirmed
+	live, SO-302-261100180 - every one of its 6 OtoBitz SO Detail rows,
+	including the BATAL INVOICE marker for nofaktur SV-302-261100203 AND the
+	real items for its replacement SV-302-261100204, was archived in the
+	same sync pass, milliseconds apart) - there was never a point where our
+	own system held SV-302-261100203 as "the" current invoice, so
+	_replace_stale_invoice() never has anything to find: nothing was ever
+	created for it to cancel.
+
+	Reported live: "SI yang terhubung itu ada 2" (two linked invoices, one
+	Cancelled + its replacement) didn't hold for this case the way it does
+	for the live-caught one - only the current invoice ever showed up.
+	Fixes that by manufacturing the missing history: for every BATAL
+	INVOICE status row archived for this WO whose nofaktur has no Sales
+	Invoice of its own yet (regardless of whether THIS sync pass is the one
+	that just created the current invoice, or an earlier one already did -
+	see this function's own unconditional call site in _sync_one_wo()),
+	create one anyway and cancel it immediately.
+
+	The one thing that can't be reconstructed is which actual items that
+	cancelled attempt billed - OtoBitz's own BATAL INVOICE marker row never
+	carries an item breakdown (see log_so_detail_rows()'s own docstring in
+	common.py), only its own dpp/ppn/grandtotal. A single lump-sum
+	placeholder line (HISTORICAL_INVOICE_ITEM_CODE) sized to that DPP is
+	used instead of inventing a fake item breakdown - this invoice only
+	ever exists to be visible on the Sales Order as "yes, this was billed
+	and cancelled", not to carry a usable item-level record OtoBitz itself
+	never gave us."""
+	rows = frappe.get_all(
+		"OtoBitz SO Detail",
+		filters={"nomorwo": nomorwo, "kodereferensi": ["in", ["", None]], "statuswo": ["!=", "FAKTUR"]},
+		fields=["nofaktur", "raw_data"],
+	)
+	created = []
+	for row in rows:
+		nofaktur = clean(row.nofaktur)
+		if not nofaktur or nofaktur == current_nofaktur:
+			continue
+		# custom_otobitz_nofaktur ALONE, not combined with custom_otobitz_wo_number
+		# like _sync_one_wo()'s own has_current_invoice check - a historical
+		# invoice never holds custom_otobitz_wo_number in the first place (see
+		# _create_historical_cancelled_invoice()'s own comment on exactly why),
+		# so matching on both together would never find the one already
+		# created and try to insert a second one - confirmed live, hitting
+		# "IntegrityError: Duplicate entry ... for key 'custom_otobitz_nofaktur'"
+		# (that field is globally unique on its own) on a second sync pass.
+		if frappe.db.exists("Sales Invoice", {"custom_otobitz_nofaktur": nofaktur}):
+			continue
+		si_name = _create_historical_cancelled_invoice(so_name, nomorwo, nofaktur, row.raw_data)
+		if si_name:
+			created.append(si_name)
+
+	if created:
+		frappe.get_doc(
+			{
+				"doctype": "Comment",
+				"comment_type": "Info",
+				"reference_doctype": "Sales Order",
+				"reference_name": so_name,
+				"content": (
+					f"OtoBitz: invoice lama ({', '.join(created)}) ditemukan sudah dibatalkan OtoBitz "
+					f"sebelum sempat tersinkron sebagai invoice aktif - dibuat sebagai riwayat "
+					f"(1 baris ringkasan, bukan rincian item asli) lalu langsung dibatalkan juga."
+				),
+			}
+		).insert(ignore_permissions=True)
+	return created
+
+
+def _create_historical_cancelled_invoice(
+	so_name: str, nomorwo: str, nofaktur: str, raw_data: str
+) -> str | None:
+	import json
+
+	try:
+		snapshot = json.loads(raw_data or "{}")
+	except ValueError:
+		return None
+
+	dpp = flt(snapshot.get("dpp"))
+	if dpp <= 0:
+		return None
+
+	so = frappe.get_doc("Sales Order", so_name)
+
+	item_group = get_or_create_item_group("OtoBitz Service")
+	upsert(
+		"Item",
+		{"item_code": HISTORICAL_INVOICE_ITEM_CODE},
+		{
+			"item_name": "Invoice Dibatalkan OtoBitz (Riwayat)",
+			"item_group": item_group,
+			"stock_uom": get_or_create_uom("Units"),
+			"is_stock_item": 0,
+			"description": (
+				"Placeholder untuk invoice OtoBitz yang sudah dibatalkan sebelum sempat "
+				"tersinkron sebagai invoice aktif - rincian item aslinya tidak pernah dikirim "
+				"OtoBitz untuk invoice yang sudah dibatalkan, jadi dicatat 1 baris ringkasan saja."
+			),
+		},
+		ignore_mandatory=True,
+		create_only_fields={"stock_uom"},
+	)
+
+	si = frappe.new_doc("Sales Invoice")
+	si.customer = so.customer
+	si.company = so.company
+	si.posting_date = getdate(snapshot.get("tglfaktur") or snapshot.get("tanggal") or so.transaction_date)
+	si.set_posting_time = 1
+	set_period_fields(si, si.posting_date)
+	si.update_stock = 0
+	# Deliberately NOT custom_otobitz_wo_number - that field is UNIQUE, and
+	# unlike _replace_stale_invoice()'s case, the CURRENT invoice already
+	# legitimately holds that slot and keeps it (it isn't being replaced,
+	# this historical one is purely additional) - confirmed live, trying to
+	# set it here hit "IntegrityError: Duplicate entry ... for key
+	# 'custom_otobitz_wo_number'" against the still-submitted current
+	# invoice. custom_otobitz_nofaktur alone (unique per invoice ATTEMPT,
+	# never collides) is what this function's own dedup check above already
+	# keys on, so nothing here actually needs the WO-number field at all.
+	si.custom_otobitz_branch = so.custom_otobitz_branch
+	si.custom_otobitz_nofaktur = nofaktur
+	si.custom_plat_nomor = clean(snapshot.get("nopolisi"))
+
+	item_row = {"item_code": HISTORICAL_INVOICE_ITEM_CODE, "qty": 1, "rate": dpp, "sales_order": so_name}
+	cost_center = resolve_branch_cost_center(so.company, snapshot.get("kode_cabang"))
+	if cost_center:
+		item_row["cost_center"] = cost_center
+	si.append("items", item_row)
+
+	si.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
+	si.set("taxes", [])
+	si.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+	_pin_oto_taxes(si, snapshot, si.company)
+
+	si.insert(ignore_permissions=True, ignore_mandatory=True)
+	si.submit()
+	si.cancel()
+	return si.name
 
 
 def _note_invoice_cancelled(so_name: str, nomorwo: str, header: dict) -> None:
