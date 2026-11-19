@@ -49,16 +49,22 @@
 
 	let cached_branches = null;
 
-	// Every real Branch name here is OtoBitz's own "<nama cabang> BY
-	// AUTO2000" (confirmed live across all 15 branches, e.g. "OTOXPERT
-	// CIATER BSD TANGERANG BY AUTO2000") - that franchise-operator suffix
-	// is redundant noise in a UI that's only ever switching between
-	// OtoBitz branches to begin with, so it's dropped for display. Falls
-	// back to the untouched name for the 2 rows that don't match the
-	// pattern (Head Office's "HO OTOXPERT AUTO2000", and the "ALL" row) -
-	// splitting on " BY " simply finds nothing there and leaves them as-is.
+	// Every real Branch name here is OtoBitz's own "OTOXPERT <nama cabang>
+	// BY AUTO2000" (confirmed live across all 15 branches, e.g. "OTOXPERT
+	// CIATER BSD TANGERANG BY AUTO2000") - both the leading "OTOXPERT" and
+	// the trailing franchise-operator "BY AUTO2000" are redundant noise in
+	// a UI that's only ever switching between OtoXpert branches to begin
+	// with, so both are dropped for display, leaving just "CIATER BSD
+	// TANGERANG". Falls back to the untouched (or partially touched) name
+	// for the 2 rows that don't match that shape - Head Office's "HO
+	// OTOXPERT AUTO2000" (no leading "OTOXPERT", no " BY " to split on)
+	// and the "ALL" row (neither) - since each replace/split simply finds
+	// nothing to act on and leaves the rest of the string as-is.
 	function short_branch_name(name) {
-		return (name || "").split(" BY ")[0].trim();
+		return (name || "")
+			.split(" BY ")[0]
+			.replace(/^OTOXPERT\s+/i, "")
+			.trim();
 	}
 
 	function ensure_present() {
@@ -95,6 +101,21 @@
 #otobitz-branch-switcher .branch-switcher-toggle svg{width:14px;height:14px}
 #otobitz-branch-switcher .dropdown-menu{min-width:240px}
 #otobitz-branch-switcher .dropdown-item.active-branch{font-weight:600;color:var(--text-on-light-blue, #1a73e8)}
+
+/* .desktop-search-wrapper (desktop.css) is "flex:1" capped at
+ * "max-width:300px" (.search-bar in navbar.scss) inside a
+ * "justify-content:space-between" row of 3 items (logo, search, icons).
+ * Once the search box hits its 300px cap, the leftover grow space isn't
+ * redistributed INTO it - space-between instead splits that leftover as
+ * two equal GAPS around it, so its position depends on how wide the
+ * other two items are. Showing the full branch name here (longer than
+ * the old bare code) widened the icons group, which - with the logo on
+ * the other side staying the same width - shrank both gaps unevenly
+ * and dragged the search box left. Taking it out of that flex
+ * computation entirely and centering it on the navbar itself (fixed
+ * point, independent of sibling widths) is what actually keeps it
+ * centered no matter how long a branch name this switcher ever shows. */
+.desktop-search-wrapper{position:absolute!important;left:50%!important;top:50%;transform:translate(-50%, -50%);flex:none!important;width:300px}
 `;
 			document.head.appendChild(style);
 		}
