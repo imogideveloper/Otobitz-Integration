@@ -49,6 +49,18 @@
 
 	let cached_branches = null;
 
+	// Every real Branch name here is OtoBitz's own "<nama cabang> BY
+	// AUTO2000" (confirmed live across all 15 branches, e.g. "OTOXPERT
+	// CIATER BSD TANGERANG BY AUTO2000") - that franchise-operator suffix
+	// is redundant noise in a UI that's only ever switching between
+	// OtoBitz branches to begin with, so it's dropped for display. Falls
+	// back to the untouched name for the 2 rows that don't match the
+	// pattern (Head Office's "HO OTOXPERT AUTO2000", and the "ALL" row) -
+	// splitting on " BY " simply finds nothing there and leaves them as-is.
+	function short_branch_name(name) {
+		return (name || "").split(" BY ")[0].trim();
+	}
+
 	function ensure_present() {
 		if (document.getElementById("otobitz-branch-switcher")) return;
 		const anchor = document.querySelector(".desktop-notifications");
@@ -91,22 +103,23 @@
 
 		// Same class list the real notification-bell button right next to
 		// this uses (btn-reset nav-link text-muted ...) so this blends
-		// into the native navbar styling instead of looking foreign -
-		// just one icon for the dropdown caret, not two, and the compact
-		// branch code (e.g. "104") instead of the full Branch name, which
-		// only fits comfortably inside the open dropdown's own list.
+		// into the native navbar styling instead of looking foreign - just
+		// one icon for the dropdown caret, not two, and the short branch
+		// name (see short_branch_name() above) instead of either the raw
+		// code or the full "... BY AUTO2000" name, in both the collapsed
+		// toggle and the open dropdown's own list.
 		const $el = $(`
-			<div class="dropdown" id="otobitz-branch-switcher" title="${__("Cabang")}: ${frappe.utils.escape_html(current.branch)}">
+			<div class="dropdown" id="otobitz-branch-switcher" title="${__("Cabang")}: ${frappe.utils.escape_html(short_branch_name(current.branch))}">
 				<button class="btn-reset nav-link text-muted branch-switcher-toggle dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
 					${frappe.utils.icon("branch", "xs")}
-					<span>${frappe.utils.escape_html(current.code)}</span>
+					<span>${frappe.utils.escape_html(short_branch_name(current.branch))}</span>
 				</button>
 				<div class="dropdown-menu dropdown-menu-right" role="menu">
 					${branches
 						.map(
 							(b) => `
 						<a class="dropdown-item ${b.name === current.name ? "active-branch" : ""}" href="#" data-up-name="${frappe.utils.escape_html(b.name)}">
-							${frappe.utils.escape_html(b.branch)}
+							${frappe.utils.escape_html(short_branch_name(b.branch))}
 						</a>`
 						)
 						.join("")}
