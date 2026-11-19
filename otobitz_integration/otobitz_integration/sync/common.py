@@ -303,6 +303,32 @@ def ensure_imogibot_user() -> str:
 	return IMOGIBOT_USER
 
 
+def resolve_supplier(kodesupplier: str | None) -> str | None:
+	"""masterdata_orderparts/masterdata_orderpekerjaanluar/masterdata_oppnt
+	all call this field `kodesupplier`, but it can land in either of two
+	separate Supplier ID namespaces this integration tracks -
+	custom_otobitz_supplier_no (from masterdata_supplier's own `nomor` -
+	see sync_suppliers.sync_suppliers()) or custom_otobitz_vendor_code
+	(from masterdata_vendor's own `kode` - see sync_suppliers.sync_vendors()).
+	Confirmed live: masterdata_oppnt's kodesupplier values ("VD401", "105",
+	"112FTM01", ...) only ever matched the SECOND of those (e.g. "112FTM01"
+	resolved to "CARVIO MITRA PARTINDO", exactly the supplier this
+	endpoint's own module docstring already names as a real example) -
+	left 21 Purchase Orders stuck in OtoBitz Failed Sync for weeks even
+	though the Supplier itself already existed, just not found by the ONLY
+	field each PO-sync module's own lookup checked. Tries supplier_no
+	first since that's the more common case (masterdata_orderparts/
+	masterdata_orderpekerjaanluar's own kodesupplier values already
+	resolved fine against it), falling back to vendor_code rather than
+	assuming which namespace any given endpoint's value belongs to."""
+	kodesupplier = clean(kodesupplier)
+	if not kodesupplier:
+		return None
+	return frappe.db.get_value(
+		"Supplier", {"custom_otobitz_supplier_no": kodesupplier}
+	) or frappe.db.get_value("Supplier", {"custom_otobitz_vendor_code": kodesupplier})
+
+
 def get_or_create_branch(kode: str | None, nama: str | None) -> str | None:
 	kode = clean(kode)
 	nama = clean(nama)

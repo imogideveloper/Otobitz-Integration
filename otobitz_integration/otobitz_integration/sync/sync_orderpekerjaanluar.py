@@ -24,6 +24,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	log_po_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
+	resolve_supplier,
 )
 
 WATERMARK_FIELD = "last_orderpekerjaanluar_sync_date"
@@ -125,12 +126,23 @@ def _sync_one_order(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
+	# Same defensive skip as sync_orderparts.py's own _sync_one_order() -
+	# an order with zero `detail` rows isn't a Purchase Order to create
+	# yet, not an error. Not what either of THIS endpoint's own 2 stuck
+	# orders turned out to be (both had exactly 1 detail row, for an
+	# item code genuinely missing from the OPL job-code catalog - a real
+	# gap, left to throw below), but the same "nothing to even try"
+	# shape could plausibly show up here too given the identical
+	# structure (see sync_oppnt.py's own module docstring).
+	if not (row.get("detail") or []):
+		return False
+
 	_create_order(nomor, row)
 	return True
 
 
 def _create_order(nomor: str, row: dict) -> str:
-	supplier = frappe.db.get_value("Supplier", {"custom_otobitz_supplier_no": clean(row.get("kodesupplier"))})
+	supplier = resolve_supplier(row.get("kodesupplier"))
 	if not supplier:
 		frappe.throw(f"Supplier {row.get('kodesupplier')!r} not found for order {nomor}")
 
