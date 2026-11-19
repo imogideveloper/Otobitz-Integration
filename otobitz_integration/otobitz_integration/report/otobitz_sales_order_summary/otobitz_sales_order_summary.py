@@ -48,31 +48,19 @@ def execute(filters=None):
 
 	rows = frappe.get_all("Sales Order", filters=conditions, fields=FIELDS)
 
+	# Precomputed onto each raw row (not just the leaf dict _detail_row
+	# builds below) because grouping.py's own _recurse() rolls up each
+	# Cabang/Bulan/etc node's "Cancel" total straight from these same raw
+	# rows, the same way it already does for grand_total/paid_amount - so
+	# the group-level figure is always the real sum of its own Cancelled
+	# rows underneath it, not a second query that could drift.
+	for row in rows:
+		row["_cancel_amount"] = flt(row.grand_total) if row.status == "Cancelled" else 0
+
 	group_order = get_active_groups(filters, AVAILABLE_GROUPS)
 	columns = _columns()
 	data = build_tree(rows, group_order, _detail_row)
-	return columns, data, None, None, _report_summary(rows)
-
-
-def _report_summary(rows):
-	cancelled = [r for r in rows if r.status == "Cancelled"]
-	active = [r for r in rows if r.status != "Cancelled"]
-	return [
-		{
-			"label": "Sales Order Aktif",
-			"value": sum(flt(r.grand_total) for r in active),
-			"datatype": "Currency",
-			"indicator": "Green",
-		},
-		{"label": "Jumlah SO Aktif", "value": len(active), "datatype": "Int"},
-		{
-			"label": "Sales Order Dibatalkan",
-			"value": sum(flt(r.grand_total) for r in cancelled),
-			"datatype": "Currency",
-			"indicator": "Red",
-		},
-		{"label": "Jumlah SO Dibatalkan", "value": len(cancelled), "datatype": "Int"},
-	]
+	return columns, data
 
 
 def _detail_row(row):
@@ -82,6 +70,7 @@ def _detail_row(row):
 		"status": row.status,
 		"count": 1,
 		"grand_total": row.grand_total,
+		"cancel_total": row.get("_cancel_amount") or 0,
 	}
 
 
@@ -90,5 +79,6 @@ def _columns():
 		{"fieldname": "customer", "label": "Customer", "fieldtype": "Data", "width": 180},
 		{"fieldname": "status", "label": "Status", "fieldtype": "Data", "width": 130},
 		{"fieldname": "count", "label": "Jumlah SO", "fieldtype": "Int", "width": 90},
+		{"fieldname": "cancel_total", "label": "Cancel", "fieldtype": "Currency", "width": 140},
 		{"fieldname": "grand_total", "label": "Total", "fieldtype": "Currency", "width": 160},
 	]

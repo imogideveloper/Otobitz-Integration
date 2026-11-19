@@ -98,6 +98,16 @@ def _recurse(rows, group_order, level, parent_id, data, detail_builder):
 				"label": f"{label_prefix}: {key}",
 				"count": len(bucket_rows),
 				"grand_total": sum(flt(r.get("grand_total") or r.get("paid_amount")) for r in bucket_rows),
+				# Rolls up each report's own "is this row Cancelled" amount
+				# (precomputed by the report itself, as "_cancel_amount" on
+				# every raw row, before calling build_tree - see
+				# otobitz_sales_order_summary.py's execute() for where
+				# that's set) the exact same way grand_total/paid_amount
+				# above already does, so a Cabang/Bulan node's "Cancel"
+				# figure is always the real sum of its own Cancelled leaf
+				# rows, not a separate query that could drift out of sync
+				# with what the table underneath it actually shows.
+				"cancel_total": sum(flt(r.get("_cancel_amount") or 0) for r in bucket_rows),
 				"indent": level,
 			}
 		)
