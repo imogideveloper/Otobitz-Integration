@@ -126,6 +126,17 @@ def _sync_one_order(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
+	# Same defensive skip as sync_orderparts.py's own _sync_one_order() -
+	# an order with zero `detail` rows isn't a Purchase Order to create
+	# yet, not an error. Not what either of THIS endpoint's own 2 stuck
+	# orders turned out to be (both had exactly 1 detail row, for an
+	# item code genuinely missing from the OPL job-code catalog - a real
+	# gap, left to throw below), but the same "nothing to even try"
+	# shape could plausibly show up here too given the identical
+	# structure (see sync_oppnt.py's own module docstring).
+	if not (row.get("detail") or []):
+		return False
+
 	_create_order(nomor, row)
 	return True
 

@@ -109,6 +109,16 @@ def _sync_one_order(nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
+	# Nothing to buy - confirmed live, 2 orders stuck for weeks ("No
+	# resolvable Items for order ...") turned out to have zero `detail`
+	# rows at all (not a genuinely-missing-Item-master code, which
+	# create_purchase_order() below would still correctly throw for -
+	# just nothing to even try). Same reasoning as _sync_one_wo()'s own
+	# WO OPEN/WO CLOSE skip in sync_service_orders.py: an order with
+	# literally no line items isn't a Purchase Order to create yet.
+	if not (row.get("detail") or []):
+		return False
+
 	_create_order(nomor, row)
 	return True
 
