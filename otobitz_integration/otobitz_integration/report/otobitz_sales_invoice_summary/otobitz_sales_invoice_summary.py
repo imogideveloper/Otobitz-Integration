@@ -53,31 +53,16 @@ def execute(filters=None):
 
 	rows = frappe.get_all("Sales Invoice", filters=conditions, fields=FIELDS)
 
+	# See the same precompute's own comment in otobitz_sales_order_summary.py -
+	# grouping.py's _recurse() rolls up each Cabang/Bulan/etc node's "Cancel"
+	# total straight from this.
+	for row in rows:
+		row["_cancel_amount"] = flt(row.grand_total) if row.status == "Cancelled" else 0
+
 	group_order = get_active_groups(filters, AVAILABLE_GROUPS)
 	columns = _columns()
 	data = build_tree(rows, group_order, _detail_row)
-	return columns, data, None, None, _report_summary(rows)
-
-
-def _report_summary(rows):
-	cancelled = [r for r in rows if r.status == "Cancelled"]
-	active = [r for r in rows if r.status != "Cancelled"]
-	return [
-		{
-			"label": "Invoice Aktif (Faktur)",
-			"value": sum(flt(r.grand_total) for r in active),
-			"datatype": "Currency",
-			"indicator": "Green",
-		},
-		{"label": "Jumlah Invoice Aktif", "value": len(active), "datatype": "Int"},
-		{
-			"label": "Invoice Dibatalkan",
-			"value": sum(flt(r.grand_total) for r in cancelled),
-			"datatype": "Currency",
-			"indicator": "Red",
-		},
-		{"label": "Jumlah Invoice Dibatalkan", "value": len(cancelled), "datatype": "Int"},
-	]
+	return columns, data
 
 
 def _detail_row(row):
@@ -87,6 +72,7 @@ def _detail_row(row):
 		"status": row.status,
 		"count": 1,
 		"grand_total": row.grand_total,
+		"cancel_total": row.get("_cancel_amount") or 0,
 		"outstanding_amount": row.outstanding_amount,
 	}
 
@@ -96,6 +82,7 @@ def _columns():
 		{"fieldname": "customer", "label": "Customer", "fieldtype": "Data", "width": 180},
 		{"fieldname": "status", "label": "Status", "fieldtype": "Data", "width": 110},
 		{"fieldname": "count", "label": "Jumlah SI", "fieldtype": "Int", "width": 90},
+		{"fieldname": "cancel_total", "label": "Cancel", "fieldtype": "Currency", "width": 130},
 		{"fieldname": "grand_total", "label": "Total", "fieldtype": "Currency", "width": 150},
 		{"fieldname": "outstanding_amount", "label": "Sisa Tagihan", "fieldtype": "Currency", "width": 150},
 	]

@@ -49,31 +49,19 @@ def execute(filters=None):
 
 	rows = frappe.get_all("Payment Entry", filters=conditions, fields=FIELDS)
 
+	# See the same precompute's own comment in otobitz_sales_order_summary.py -
+	# grouping.py's _recurse() rolls up each Cabang/Bulan/etc node's "Cancel"
+	# total straight from this. Payment Entry has no "Cancelled"-valued
+	# status column reused for display here (this report's own "status"
+	# output key is mode_of_payment) - docstatus itself is the only
+	# reliable cancelled check.
+	for row in rows:
+		row["_cancel_amount"] = flt(row.paid_amount) if row.docstatus == 2 else 0
+
 	group_order = get_active_groups(filters, AVAILABLE_GROUPS)
 	columns = _columns()
 	data = build_tree(rows, group_order, _detail_row)
-	return columns, data, None, None, _report_summary(rows)
-
-
-def _report_summary(rows):
-	cancelled = [r for r in rows if r.docstatus == 2]
-	active = [r for r in rows if r.docstatus != 2]
-	return [
-		{
-			"label": "Pembayaran Aktif",
-			"value": sum(flt(r.paid_amount) for r in active),
-			"datatype": "Currency",
-			"indicator": "Green",
-		},
-		{"label": "Jumlah Pembayaran Aktif", "value": len(active), "datatype": "Int"},
-		{
-			"label": "Pembayaran Dibatalkan",
-			"value": sum(flt(r.paid_amount) for r in cancelled),
-			"datatype": "Currency",
-			"indicator": "Red",
-		},
-		{"label": "Jumlah Pembayaran Dibatalkan", "value": len(cancelled), "datatype": "Int"},
-	]
+	return columns, data
 
 
 def _detail_row(row):
@@ -83,6 +71,7 @@ def _detail_row(row):
 		"status": row.mode_of_payment,
 		"count": 1,
 		"grand_total": row.paid_amount,
+		"cancel_total": row.get("_cancel_amount") or 0,
 	}
 
 
@@ -91,5 +80,6 @@ def _columns():
 		{"fieldname": "customer", "label": "Customer", "fieldtype": "Data", "width": 180},
 		{"fieldname": "status", "label": "Metode Pembayaran", "fieldtype": "Data", "width": 150},
 		{"fieldname": "count", "label": "Jumlah", "fieldtype": "Int", "width": 90},
+		{"fieldname": "cancel_total", "label": "Cancel", "fieldtype": "Currency", "width": 140},
 		{"fieldname": "grand_total", "label": "Total Diterima", "fieldtype": "Currency", "width": 160},
 	]
