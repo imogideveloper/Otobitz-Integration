@@ -24,6 +24,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	log_po_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
+	resolve_supplier,
 )
 
 WATERMARK_FIELD = "last_orderparts_sync_date"
@@ -113,7 +114,7 @@ def _sync_one_order(nomor: str, row: dict) -> bool:
 
 
 def _create_order(nomor: str, row: dict) -> str:
-	supplier = frappe.db.get_value("Supplier", {"custom_otobitz_supplier_no": clean(row.get("kodesupplier"))})
+	supplier = resolve_supplier(row.get("kodesupplier"))
 	if not supplier:
 		frappe.throw(f"Supplier {row.get('kodesupplier')!r} not found for order {nomor}")
 

@@ -47,6 +47,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	log_po_detail_row,
 	renew_sync_lock,
 	resolve_failed_sync,
+	resolve_supplier,
 	safe_name,
 	upsert_safe,
 )
@@ -172,7 +173,7 @@ def _get_or_create_part_item(kode_pekerjaan: str, nama_pekerjaan: str | None, ha
 
 
 def _create_order(nomor: str, row: dict) -> str:
-	supplier = frappe.db.get_value("Supplier", {"custom_otobitz_supplier_no": clean(row.get("kodesupplier"))})
+	supplier = resolve_supplier(row.get("kodesupplier"))
 	if not supplier:
 		frappe.throw(f"Supplier {row.get('kodesupplier')!r} not found for order {nomor}")
 
