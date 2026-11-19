@@ -348,6 +348,25 @@ def get_or_create_branch(kode: str | None, nama: str | None) -> str | None:
 	return branch.name
 
 
+def find_employee_by_teknisi_code(kode: str | None) -> str | None:
+	"""Employee pemilik kode teknisi OtoBitz.
+
+	Satu orang bisa punya beberapa kode (satu per outlet), tersimpan di tabel `custom_otobitz_teknisi_codes`
+	(OtoBitz Technician Code). Dicari di tabel itu dulu, lalu di field lama `custom_otobitz_teknisi_code`
+	(untuk situs yang patch salinnya belum jalan).
+	"""
+	kode = clean(kode)
+	if not kode:
+		return None
+	if frappe.db.table_exists("OtoBitz Technician Code"):
+		parent = frappe.db.get_value(
+			"OtoBitz Technician Code", {"kode": kode, "parenttype": "Employee"}, "parent"
+		)
+		if parent:
+			return parent
+	return frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": kode})
+
+
 def get_or_create_customer_address(customer: str, alamat: str | None) -> str | None:
 	"""Get-or-create a billing+shipping Address for `customer` from OtoBitz's
 	free-text `alamat` field - the caller assigns the returned name to a

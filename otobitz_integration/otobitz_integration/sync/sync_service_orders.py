@@ -39,6 +39,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	IMOGIBOT_USER,
 	clean,
 	clean_or_none,
+	find_employee_by_teknisi_code,
 	get_or_create_customer_address,
 	get_or_create_item_group,
 	get_or_create_uom,
@@ -778,7 +779,8 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	branch = frappe.db.get_value("Branch", {"custom_otobitz_branch_code": clean(header.get("kode_cabang"))})
-	teknisi = frappe.db.get_value("Employee", {"custom_otobitz_teknisi_code": clean(header.get("kodeteknisi"))})
+	# Lewat tabel kode teknisi: satu karyawan bisa punya beberapa kode (satu per outlet).
+	teknisi = find_employee_by_teknisi_code(header.get("kodeteknisi"))
 	item_cost_center = resolve_branch_cost_center(company, header.get("kode_cabang"))
 	vehicle_type = _link_if_exists("OtoBitz Vehicle Type", header.get("kodetipe"))
 	vehicle_color = _link_if_exists("OtoBitz Vehicle Color", header.get("kodewarna"))
