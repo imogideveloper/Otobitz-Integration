@@ -18,7 +18,7 @@ import json
 
 import frappe
 
-from otobitz_integration.otobitz_integration.sync.common import log_failed_sync, resolve_failed_sync
+from otobitz_integration.otobitz_integration.sync.common import clean, log_failed_sync, resolve_failed_sync
 from otobitz_integration.otobitz_integration.sync.sync_booking import _sync_one_booking
 from otobitz_integration.otobitz_integration.sync.sync_orderparts import _sync_one_order as _sync_one_orderpart
 from otobitz_integration.otobitz_integration.sync.sync_orderpekerjaanluar import (
@@ -29,6 +29,23 @@ from otobitz_integration.otobitz_integration.sync.sync_pengeluaran import _sync_
 from otobitz_integration.otobitz_integration.sync.sync_penerimaan import _sync_one_receipt
 from otobitz_integration.otobitz_integration.sync.sync_service_orders import _sync_one_wo
 
+
+def _retry_one_booking(allocation_ref: str, row: dict) -> bool:
+	"""_sync_one_booking() needs a 3rd positional arg (`nomor`, the shared
+	receipt number one `nomor` can split across several bookings/vehicles -
+	see sync_booking.py's own module docstring) that every other endpoint's
+	retry function doesn't - confirmed live, every one of this endpoint's
+	"OtoBitz Failed Sync" rows hit "_sync_one_booking() missing 1 required
+	positional argument: 'row'" on retry (the generic 2-arg call below was
+	passing `row` into the `nomor` slot and leaving nothing for `row` itself).
+	`nomor` is always inside `row` too (`row.get("nomor")` - same place the
+	original sync loop in sync_booking.py reads it from), so it doesn't need
+	its own column on "OtoBitz Failed Sync" - just re-derived here the same
+	way."""
+	nomor = clean(row.get("nomor"))
+	return _sync_one_booking(allocation_ref, nomor, row)
+
+
 # endpoint -> the per-record sync function to call again with the queued
 # raw_data. sync_service_orders is the only one keyed on a list of line-item
 # rows (one Work Order can have many); every other endpoint is one row per
@@ -37,7 +54,7 @@ _DISPATCH = {
 	"otoxpertsoandpart": _sync_one_wo,
 	"penerimaanuang": _sync_one_receipt,
 	"pengeluaranuang": _sync_one_expense,
-	"penerimaanuangmukabooking": _sync_one_booking,
+	"penerimaanuangmukabooking": _retry_one_booking,
 	"masterdata_orderparts": _sync_one_orderpart,
 	"masterdata_orderpekerjaanluar": _sync_one_orderpekerjaanluar,
 	"masterdata_oppnt": _sync_one_oppnt,
