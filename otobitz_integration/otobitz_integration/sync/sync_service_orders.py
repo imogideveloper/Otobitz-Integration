@@ -1132,7 +1132,19 @@ def lookup_and_sync_wo(nomorwo: str) -> dict:
 	Work Order via `otoxpertsoandpartpernomor` (same response shape as
 	`otoxpertsoandpart`, just pre-filtered to one WO server-side), instead of
 	waiting for it to fall inside the next hourly date window. Reuses
-	`_sync_one_wo` directly - no separate mapping logic to keep in sync."""
+	`_sync_one_wo` directly - no separate mapping logic to keep in sync.
+
+	Also archives the fetched rows via log_so_detail_rows() - this was
+	missing entirely until confirmed live (2026-11-19, SO-302-261100179):
+	OtoBitz had already moved this WO on to a new invoice attempt with a
+	genuinely different, smaller item set than what the existing Sales
+	Order still held (stale from its original sync), but calling this
+	function to pick that up left no archived row explaining why - the
+	resulting Sales Invoice still got built from the SO's own stale items
+	instead of the fetched rows' real ones, producing a nonsense Pembulatan
+	forcing the wrong item total to match the new (correct) grandtotal.
+	force_resync_wo() below calls this function too, so this one fix
+	covers both entry points."""
 	frappe.only_for("System Manager")
 
 	nomorwo = clean(nomorwo)
@@ -1144,6 +1156,7 @@ def lookup_and_sync_wo(nomorwo: str) -> dict:
 	if not rows:
 		return {"found": False, "nomorwo": nomorwo}
 
+	log_so_detail_rows(rows, endpoint="otoxpertsoandpartpernomor")
 	was_created = _sync_one_wo(nomorwo, rows, {}, "otoxpertsoandpartpernomor")
 	frappe.db.commit()
 
