@@ -212,7 +212,14 @@ function sod_fetch_snapshots(frm) {
 		method: "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_status_snapshots",
 		args: { nomorwo: frm.doc.nomorwo },
 		callback(r) {
-			frm._sod_snapshots = (r.message || []).filter((s) => s.name !== frm.doc.name);
+			// get_status_snapshots() never returns a FAKTUR-status row, so
+			// this document itself only ever shows up here when IT is one
+			// of these non-current snapshots - keeping it in the list
+			// (rather than filtering it out like an earlier version of
+			// this did) is what lets the dropdown actually highlight it as
+			// the selected option below, matching the pre-selection
+			// refresh() already made.
+			frm._sod_snapshots = r.message || [];
 			if (frm._sod_snapshots.length) sod_render_wo_summary(frm, true);
 		},
 	});
@@ -509,7 +516,33 @@ function sod_inject_style() {
 frappe.ui.form.on("OtoBitz SO Detail", {
 	refresh(frm) {
 		sod_inject_style();
-		sod_selected_snapshot = null;
+		// Opening a non-current status row's OWN form directly (from the
+		// List View, say - not via the snapshot dropdown on the live
+		// FAKTUR summary) used to always reset to "Invoice saat ini
+		// (aktif)" here regardless of which document this actually is -
+		// the breadcrumb badge correctly showed e.g. "BATAL INVOICE" (that
+		// comes straight from frm.doc.statuswo below), but the Items/Total
+		// table underneath kept showing the CURRENT invoice's shared item
+		// rows instead of this cancelled invoice's own totals, since
+		// get_wo_summary() only ever returns the WO's real (invoice-
+		// attempt-agnostic) item rows. Pre-selecting THIS document's own
+		// raw_data as the snapshot whenever it's itself a header-only,
+		// non-FAKTUR row (a real item row with kodereferensi is always
+		// the current invoice's own line, never a stale one - see
+		// log_so_detail_rows()'s docstring in common.py) means the summary
+		// actually reflects the document being viewed.
+		const is_own_snapshot = !frm.doc.kodereferensi && (frm.doc.statuswo || "").trim().toUpperCase() !== "FAKTUR";
+		if (is_own_snapshot) {
+			let data = {};
+			try {
+				data = JSON.parse(frm.doc.raw_data || "{}");
+			} catch (e) {
+				data = {};
+			}
+			sod_selected_snapshot = { name: frm.doc.name, data };
+		} else {
+			sod_selected_snapshot = null;
+		}
 		sod_render_table(frm);
 		sod_render_wo_summary(frm);
 		sod_fetch_snapshots(frm);
