@@ -358,6 +358,24 @@ def _sync_one_wo(
 	if existing_so:
 		created = False
 	else:
+		# Nothing to build a Sales Order from yet if not one single row
+		# carries a real item - confirmed live across ~30 WOs stuck for
+		# weeks in OtoBitz Failed Sync under "Item tidak bisa di-resolve
+		# dari WO" with no item code even named in the error (the OTHER,
+		# genuinely-missing-from-Item-master case always names at least
+		# one). OtoBitz's own statuswo for these was "WO OPEN" (service
+		# still in progress) or "WO CLOSE" (closed without ever being
+		# billed) - _create_sales_order() below always throws for these
+		# (there's nothing resolvable OR unresolvable, just nothing at
+		# all to even try), and retrying with the same stale queued data
+		# never helps since the WO genuinely has no items to invoice yet.
+		# Skipped instead, same as the tglbatal-cancelled case above - the
+		# regular hourly sync picks it up correctly on its own once
+		# OtoBitz actually reports real items (confirmed live: 2 of 3
+		# sampled WOs synced successfully the instant a fresh lookup was
+		# tried, since the real work had finished by then).
+		if not any((r.get("kodereferensi") or "").strip() for r in wo_rows):
+			return False
 		if needs_customer_lookup:
 			header = _decrypted_header(header, customer_cache if customer_cache is not None else {})
 		existing_so = _create_sales_order(nomorwo, header, wo_rows)
