@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe.utils import flt
 
 from otobitz_integration.otobitz_integration.report.grouping import (
 	base_columns,
@@ -29,7 +30,18 @@ AVAILABLE_GROUPS = {"custom_tahun", "custom_bulan", "tanggal", "custom_otobitz_b
 def execute(filters=None):
 	filters = filters or {}
 
-	conditions = {"custom_otobitz_wo_number": ["is", "set"], "docstatus": 1}
+	# docstatus 1 only (the original filter here) silently hid every
+	# Cancelled invoice from this report entirely - including the ones
+	# _replace_stale_invoice()/_create_historical_cancelled_invoice() in
+	# sync_service_orders.py deliberately keep around (not delete) so a
+	# Work Order's cancelled-and-reissued invoice history stays visible
+	# and auditable. Reported live: no way to see how much money that
+	# represents in total. custom_otobitz_nofaktur, not
+	# custom_otobitz_wo_number, is the identity filter here because
+	# those same two functions clear wo_number off a cancelled invoice
+	# (it has a UNIQUE constraint the still-active replacement invoice
+	# needs to claim) but always leave nofaktur alone.
+	conditions = {"custom_otobitz_nofaktur": ["is", "set"], "docstatus": ["in", [1, 2]]}
 	if filters.get("company"):
 		conditions["company"] = filters["company"]
 	if filters.get("from_date") and filters.get("to_date"):
@@ -44,7 +56,28 @@ def execute(filters=None):
 	group_order = get_active_groups(filters, AVAILABLE_GROUPS)
 	columns = _columns()
 	data = build_tree(rows, group_order, _detail_row)
-	return columns, data
+	return columns, data, None, None, _report_summary(rows)
+
+
+def _report_summary(rows):
+	cancelled = [r for r in rows if r.status == "Cancelled"]
+	active = [r for r in rows if r.status != "Cancelled"]
+	return [
+		{
+			"label": "Invoice Aktif (Faktur)",
+			"value": sum(flt(r.grand_total) for r in active),
+			"datatype": "Currency",
+			"indicator": "Green",
+		},
+		{"label": "Jumlah Invoice Aktif", "value": len(active), "datatype": "Int"},
+		{
+			"label": "Invoice Dibatalkan",
+			"value": sum(flt(r.grand_total) for r in cancelled),
+			"datatype": "Currency",
+			"indicator": "Red",
+		},
+		{"label": "Jumlah Invoice Dibatalkan", "value": len(cancelled), "datatype": "Int"},
+	]
 
 
 def _detail_row(row):
