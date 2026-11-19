@@ -146,6 +146,17 @@ def _sync_one_receipt(nomor: str, row: dict) -> bool:
 	that was briefly tried and rejected: custom_otobitz_receipt_number has a
 	unique DB constraint, so it can only ever hold one value per column
 	regardless of dedup logic)."""
+	# Zero-amount administrative rows (e.g. "PENYELESAIAN PPH 23" tax
+	# settlements, keterangan-only - see _create_payment_entry()'s own
+	# docstring) never create/affect a Payment Entry regardless of
+	# whether a Sales Invoice is even resolvable - confirmed live,
+	# "PENYELESAIAN PPH 23 NO SV-101-260600075, SV-101-260600201" had
+	# nilaipenerimaan "0" and no resolvable nofaktur, throwing "No Sales
+	# Invoice found" over a receipt that was always going to be a no-op
+	# either way. Checked before even attempting nofaktur resolution.
+	if flt(row.get("nilaipenerimaan")) <= 0:
+		return False
+
 	nofaktur = clean(row.get("noreferensi"))
 	si_name = nofaktur and _resolve_sales_invoice(nofaktur)
 	is_cancel = (row.get("status") or "").strip().lower() == "batal"
