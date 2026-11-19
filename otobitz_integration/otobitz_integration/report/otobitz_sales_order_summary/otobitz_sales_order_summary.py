@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe.utils import flt
 
 from otobitz_integration.otobitz_integration.report.grouping import (
 	base_columns,
@@ -30,7 +31,12 @@ AVAILABLE_GROUPS = {"custom_tahun", "custom_bulan", "tanggal", "custom_otobitz_b
 def execute(filters=None):
 	filters = filters or {}
 
-	conditions = {"custom_otobitz_wo_number": ["is", "set"], "docstatus": 1}
+	# docstatus 1 only (the original filter here) silently hid every
+	# Cancelled Work Order's Sales Order from this report - see the same
+	# fix's own comment in otobitz_sales_invoice_summary.py. Sales
+	# Order's own custom_otobitz_wo_number is never cleared on cancel
+	# (unlike Sales Invoice's), so that identity filter stays as-is here.
+	conditions = {"custom_otobitz_wo_number": ["is", "set"], "docstatus": ["in", [1, 2]]}
 	if filters.get("company"):
 		conditions["company"] = filters["company"]
 	if filters.get("from_date") and filters.get("to_date"):
@@ -45,7 +51,28 @@ def execute(filters=None):
 	group_order = get_active_groups(filters, AVAILABLE_GROUPS)
 	columns = _columns()
 	data = build_tree(rows, group_order, _detail_row)
-	return columns, data
+	return columns, data, None, None, _report_summary(rows)
+
+
+def _report_summary(rows):
+	cancelled = [r for r in rows if r.status == "Cancelled"]
+	active = [r for r in rows if r.status != "Cancelled"]
+	return [
+		{
+			"label": "Sales Order Aktif",
+			"value": sum(flt(r.grand_total) for r in active),
+			"datatype": "Currency",
+			"indicator": "Green",
+		},
+		{"label": "Jumlah SO Aktif", "value": len(active), "datatype": "Int"},
+		{
+			"label": "Sales Order Dibatalkan",
+			"value": sum(flt(r.grand_total) for r in cancelled),
+			"datatype": "Currency",
+			"indicator": "Red",
+		},
+		{"label": "Jumlah SO Dibatalkan", "value": len(cancelled), "datatype": "Int"},
+	]
 
 
 def _detail_row(row):
