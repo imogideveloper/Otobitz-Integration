@@ -71,6 +71,7 @@ app_include_js = [
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {"Payroll Entry": "public/js/payroll_entry_branch_cost_center.js"}
 doctype_list_js = {"OtoBitz Failed Sync": "public/js/otobitz_failed_sync_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
