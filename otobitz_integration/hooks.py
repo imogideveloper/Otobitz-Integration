@@ -26,7 +26,7 @@ required_apps = ["frappe/erpnext"]
 
 # include js, css files in header of desk.html
 app_include_css = [
-	"/assets/otobitz_integration/css/desk.css?v=18",
+	"/assets/otobitz_integration/css/desk.css?v=19",
 	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=13",
 ]
 # The query string is a manual cache-buster: app_include_js isn't routed
@@ -72,7 +72,10 @@ app_include_js = [
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 doctype_js = {"Payroll Entry": "public/js/payroll_entry_branch_cost_center.js"}
-doctype_list_js = {"OtoBitz Failed Sync": "public/js/otobitz_failed_sync_list.js"}
+doctype_list_js = {
+	"OtoBitz Failed Sync": "public/js/otobitz_failed_sync_list.js",
+	"Employee": "public/js/employee_list.js",
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
