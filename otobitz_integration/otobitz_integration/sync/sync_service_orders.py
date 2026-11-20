@@ -235,6 +235,18 @@ def sync_service_orders(date_range: tuple[str, str] | None = None) -> dict:
 	customer_cache: dict = {}
 
 	fetched = created = updated = failed = archived = 0
+	# First chunk whose API call itself failed (both endpoints, if a fallback
+	# exists) - unlike a row/WO-level failure below (which still gets archived
+	# and lands in OtoBitz Failed Sync for retry.py to pick up), a chunk-level
+	# failure means we never even saw that day's rows at all. The watermark
+	# write at the end of this function must not advance past this day, or the
+	# gap is silently permanent: get_sync_window()'s OVERLAP_DAYS=3 only ever
+	# looks 3 days behind the watermark, so once it's past a skipped day that
+	# day is never retried again. Confirmed live: this is exactly how entire
+	# months (Mar-Jun, Aug-Sep 2026) ended up with zero archived rows - the
+	# watermark kept jumping to today() every run regardless of same-run
+	# failures.
+	first_unfetched_chunk_start: str | None = None
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
 		renew_sync_lock()
 		endpoint_used = primary_endpoint
@@ -244,6 +256,8 @@ def sync_service_orders(date_range: tuple[str, str] | None = None) -> dict:
 			if not (auto_fallback and fallback_endpoint):
 				frappe.log_error(title=f"OtoBitz sync: giving up on {primary_endpoint} {chunk_start}..{chunk_end}")
 				failed += 1
+				if first_unfetched_chunk_start is None:
+					first_unfetched_chunk_start = chunk_start
 				continue
 			frappe.log_error(
 				title=f"OtoBitz sync: {primary_endpoint} down, falling back to {fallback_endpoint} for {chunk_start}..{chunk_end}"
@@ -259,6 +273,8 @@ def sync_service_orders(date_range: tuple[str, str] | None = None) -> dict:
 					)
 				)
 				failed += 1
+				if first_unfetched_chunk_start is None:
+					first_unfetched_chunk_start = chunk_start
 				continue
 
 		rows = response.get("data-so") or []
@@ -311,7 +327,10 @@ def sync_service_orders(date_range: tuple[str, str] | None = None) -> dict:
 		)
 
 	if date_range is None:
-		frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", nowdate(), update_modified=False)
+		new_watermark = (
+			str(add_days(getdate(first_unfetched_chunk_start), -1)) if first_unfetched_chunk_start else nowdate()
+		)
+		frappe.db.set_single_value("OtoBitz Settings", "last_so_sync_date", new_watermark, update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed, "archived": archived}

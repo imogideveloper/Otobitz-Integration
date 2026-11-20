@@ -71,6 +71,11 @@ def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
 	tanggalawal, tanggalakhir = date_range or get_sync_window()
 
 	fetched = created = updated = failed = 0
+	# See sync_service_orders.py's identical variable for why this matters:
+	# a chunk-level failure (the whole day's API call never came back) must
+	# cap how far the watermark below is allowed to advance, or that day is
+	# silently never retried again.
+	first_unfetched_chunk_start: str | None = None
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
 		renew_sync_lock()
 		try:
@@ -78,6 +83,8 @@ def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
 		except OtoBitzAPIError:
 			frappe.log_error(title=f"OtoBitz sync: giving up on penerimaanuangmukabooking {chunk_start}..{chunk_end}")
 			failed += 1
+			if first_unfetched_chunk_start is None:
+				first_unfetched_chunk_start = chunk_start
 			continue
 
 		rows = response.get("data-penerimaanbooking") or []
@@ -115,7 +122,10 @@ def sync_booking(date_range: tuple[str, str] | None = None) -> dict:
 				failed += 1
 
 	if date_range is None:
-		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
+		new_watermark = (
+			str(add_days(getdate(first_unfetched_chunk_start), -1)) if first_unfetched_chunk_start else nowdate()
+		)
+		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, new_watermark, update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}
