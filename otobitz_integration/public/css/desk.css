@@ -311,3 +311,40 @@ label.switch-control:has(input:disabled) > .switch-visual {
 		display: none !important;
 	}
 }
+
+/* Payroll Entry > Employees table: Frappe gives every column the same width (203px on a 1463px screen), so a long
+   "HR-EMP-00061: Samtio Hendra Widodo" stretched its cell and the rows no longer lined up, while the checkbox
+   column got as much room as the names. The Employee column already shows the name (as "ID: Name" or the name),
+   so the separate Employee Name column is dropped; the rest are sized to their longest value (Inter 13px +
+   16px padding): Employee 324px, Designation 196px, Is Salary Withheld 130px, Department takes what is left.
+   Long values wrap instead of being cut ("..."). */
+body[data-route^="Form/Payroll Entry/"] .frappe-control[data-fieldname="employees"] .grid-row > .data-row > .col[data-fieldname="employee_name"] {
+	display: none !important;
+}
+body[data-route^="Form/Payroll Entry/"] .frappe-control[data-fieldname="employees"] .grid-row > .data-row > .col[data-fieldname="employee"] {
+	flex: 0 1 324px !important;
+	min-width: 0 !important;
+	max-width: none !important;
+}
+body[data-route^="Form/Payroll Entry/"] .frappe-control[data-fieldname="employees"] .grid-row > .data-row > .col[data-fieldname="department"] {
+	flex: 1 1 0 !important;
+	min-width: 0 !important;
+	max-width: none !important;
+}
+body[data-route^="Form/Payroll Entry/"] .frappe-control[data-fieldname="employees"] .grid-row > .data-row > .col[data-fieldname="designation"] {
+	flex: 0 0 196px !important;
+	min-width: 0 !important;
+	max-width: 196px !important;
+}
+body[data-route^="Form/Payroll Entry/"] .frappe-control[data-fieldname="employees"] .grid-row > .data-row > .col[data-fieldname="is_salary_withheld"] {
+	flex: 0 0 130px !important;
+	min-width: 0 !important;
+	max-width: 130px !important;
+	justify-content: center !important;
+	text-align: center !important;
+}
+body[data-route^="Form/Payroll Entry/"] .frappe-control[data-fieldname="employees"] .grid-row > .data-row > .col:is([data-fieldname="employee"], [data-fieldname="department"]) :is(.static-area, .ellipsis) {
+	white-space: normal !important;
+	overflow: visible !important;
+	text-overflow: clip !important;
+}
