@@ -307,7 +307,22 @@
 					renderDD($w, $input.val().trim());
 				} else if (e.key === "Enter") {
 					e.preventDefault();
-					applyField($w, active_idx > -1 ? active_idx : 0);
+					if (active_idx > -1) {
+						// Saran dipilih dengan panah: persempit ke kolom itu.
+						applyField($w, active_idx);
+					} else {
+						// Enter tanpa memilih saran: cari di semua kolom sekarang juga (tanpa menunggu debounce)
+						// dan biarkan teksnya. Dulu Enter memakai saran pertama (ID), sehingga mengetik nama lalu
+						// Enter mencari ID = nama, hasilnya kosong dan kotaknya ikut dikosongkan.
+						var term_now = $input.val().trim();
+						liveSearch.cancel && liveSearch.cancel();
+						$w.find("#ob-gs-dd").hide();
+						if (term_now) {
+							live_term = term_now;
+							listview.start = 0;
+							listview.refresh();
+						}
+					}
 				} else if (e.key === "Escape") {
 					$w.find("#ob-gs-dd").hide();
 				}
@@ -349,13 +364,28 @@
 			return true;
 		}
 
+		// Kotak Cari langsung siap diketik saat daftar dibuka (tanpa klik dulu). Hanya saat daftar baru tampil,
+		// bukan setiap refresh, dan tidak merebut fokus dari input lain atau di perangkat sentuh (keyboard muncul).
+		function focusSearch() {
+			var _r = frappe.get_route();
+			if (!_r || _r[0] !== "List" || _r[1] !== listview.doctype || !$widget) return;
+			if (frappe.is_mobile && frappe.is_mobile()) return;
+			var a = document.activeElement;
+			if (a && a !== document.body && $(a).is("input, textarea, select, [contenteditable=true]")) return;
+			$widget.find("#ob-gs-input").trigger("focus");
+		}
+		frappe.router && frappe.router.on && frappe.router.on("change", function () {
+			setTimeout(function () { if (injectUI()) focusSearch(); }, 300);
+		});
+
 		refreshFields();
 		var oR = listview.render, oRf = listview.refresh;
 		listview.render = function () { var r = oR.apply(this, arguments); refreshFields(); injectUI(); return r; };
 		listview.refresh = function () { var r = oRf.apply(this, arguments); refreshFields(); injectUI(); return r; };
 
 		frappe.after_ajax(function () {
-			if (!injectUI()) { var n = 0; var iv = setInterval(function () { n++; if (injectUI() || n > 20) clearInterval(iv); }, 200); }
+			if (injectUI()) { focusSearch(); }
+			else { var n = 0; var iv = setInterval(function () { n++; if (injectUI()) { clearInterval(iv); focusSearch(); } else if (n > 20) clearInterval(iv); }, 200); }
 		});
 	}
 
