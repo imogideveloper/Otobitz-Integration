@@ -251,3 +251,18 @@ label.switch-control:has(input:disabled) > .switch-visual {
 		transition: none !important;
 	}
 }
+
+/* Employee list: imogi_finance.bundle.css hides list columns by position (nth-child 4/6/8) on narrower screens,
+   written for an older column order - with the current columns it hid Branch, and Status once the order changed.
+   Show every column again and, when room is short, drop the Department by name instead of by position.
+   Order comes from List View Settings: ID, Full Name, Branch, Designation, Department, Status. */
+@media (min-width: 768px) {
+	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis:is(:nth-child(4), :nth-child(6), :nth-child(8)) {
+		display: block !important;
+	}
+}
+@media (min-width: 768px) and (max-width: 1670px) {
+	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis[data-fieldname="department"]:nth-child(n) {
+		display: none !important;
+	}
+}
