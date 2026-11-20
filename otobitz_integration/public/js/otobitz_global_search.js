@@ -135,6 +135,14 @@
 			if (SEARCHABLE_FIELDTYPES.indexOf(df.fieldtype) === -1) return;
 			seen[df.fieldname] = true;
 			fields.push({ fieldname: df.fieldname, label: df.label || df.fieldname });
+			// A Link column stores the ID (HR-EMP-00047) but displays the name, so typing a name never matched.
+			// When this doctype keeps the name beside the link (employee -> employee_name, customer -> customer_name),
+			// search that too.
+			var name_fn = df.fieldname + "_name";
+			if (df.fieldtype === "Link" && !seen[name_fn] && frappe.meta.has_field(listview.doctype, name_fn)) {
+				seen[name_fn] = true;
+				fields.push({ fieldname: name_fn, label: __("{0} (nama)", [df.label || df.fieldname]) });
+			}
 		});
 		// Important vehicle identifiers that live on the form, not in the list columns: plate, chassis, engine number.
 		// Anything else on the form is reachable through Group By / the Filter button.
