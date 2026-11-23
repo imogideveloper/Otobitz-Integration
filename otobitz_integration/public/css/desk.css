@@ -312,6 +312,20 @@ label.switch-control:has(input:disabled) > .switch-visual {
 	}
 }
 
+/* Imogi Payroll Overtime list: the ID ("IMOGI-OT-2026-00052", checkbox included) needs ~225px but Frappe's
+   subject column is narrower, so the last digits were cut - and those digits are the only part that differs
+   between rows. The ID column gets a fixed 240px; Nama Karyawan (next column) still has plenty of room. */
+@media (min-width: 768px) {
+	[data-page-route="List/Imogi Payroll Overtime/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-subject.list-subject {
+		flex: 0 0 240px !important;
+		min-width: 240px !important;
+		max-width: 240px !important;
+	}
+	[data-page-route="List/Imogi Payroll Overtime/List"] .frappe-list .list-row .list-subject .ellipsis {
+		text-overflow: clip !important;
+	}
+}
+
 /* Payroll Entry > Employees table: Frappe gives every column the same width (203px on a 1463px screen), so a long
    "HR-EMP-00061: Samtio Hendra Widodo" stretched its cell and the rows no longer lined up, while the checkbox
    column got as much room as the names. The Employee column already shows the name (as "ID: Name" or the name),
