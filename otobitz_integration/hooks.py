@@ -238,6 +238,7 @@ scheduler_events = {
 	"daily": [
 		"otobitz_integration.otobitz_integration.sync.reconciliation.daily_reconciliation_check",
 		"otobitz_integration.otobitz_integration.sync.reconciliation.daily_failed_sync_digest",
+		"otobitz_integration.otobitz_integration.sync.sync_penerimaan.daily_cleanup_missing_invoice_failures",
 	],
 }
 

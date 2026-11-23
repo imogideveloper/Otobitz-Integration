@@ -82,6 +82,11 @@ def sync_penerimaan(date_range: tuple[str, str] | None = None) -> dict:
 	tanggalawal, tanggalakhir = date_range or get_sync_window()
 
 	fetched = created = updated = failed = 0
+	# See sync_service_orders.py's identical variable for why this matters:
+	# a chunk-level failure (the whole day's API call never came back) must
+	# cap how far the watermark below is allowed to advance, or that day is
+	# silently never retried again.
+	first_unfetched_chunk_start: str | None = None
 	for chunk_start, chunk_end in _iter_date_chunks(tanggalawal, tanggalakhir):
 		renew_sync_lock()
 		try:
@@ -89,6 +94,8 @@ def sync_penerimaan(date_range: tuple[str, str] | None = None) -> dict:
 		except OtoBitzAPIError:
 			frappe.log_error(title=f"OtoBitz sync: giving up on penerimaanuang {chunk_start}..{chunk_end}")
 			failed += 1
+			if first_unfetched_chunk_start is None:
+				first_unfetched_chunk_start = chunk_start
 			continue
 
 		rows = response.get("data-penerimaanuang") or []
@@ -128,7 +135,10 @@ def sync_penerimaan(date_range: tuple[str, str] | None = None) -> dict:
 				failed += 1
 
 	if date_range is None:
-		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, nowdate(), update_modified=False)
+		new_watermark = (
+			str(add_days(getdate(first_unfetched_chunk_start), -1)) if first_unfetched_chunk_start else nowdate()
+		)
+		frappe.db.set_single_value("OtoBitz Settings", WATERMARK_FIELD, new_watermark, update_modified=False)
 	frappe.db.commit()
 
 	return {"fetched": fetched, "created": created, "updated": updated, "failed": failed}
@@ -565,3 +575,21 @@ def cleanup_missing_invoice_failures(min_age_days: int = 7, dry_run: int = 1) ->
 			frappe.db.commit()
 
 	return report
+
+
+def daily_cleanup_missing_invoice_failures() -> None:
+	"""scheduler_events["daily"] entrypoint for cleanup_missing_invoice_failures()
+	- confirmed live (2026-11-20..23): deleting a permanently-unresolvable
+	"Sales Invoice belum ada" row doesn't stop it coming back. The exact same
+	nofaktur gets refetched and fails again within hours whenever the
+	underlying payment's own date is still inside the normal retry window
+	(fresh activity against an old, otherwise-dead invoice - e.g. a customer
+	settling an old debt), recreating a brand new Failed Sync row. Left to a
+	human to notice and manually re-run the cleanup every few days, this was
+	exactly the kind of slow, silent pileup this whole category was fixed
+	for in the first place. cleanup_missing_invoice_failures() itself
+	defaults to dry_run=1 (a human calling it ad hoc almost always wants a
+	preview first) - this wrapper exists purely to pass dry_run=0 for the
+	unattended daily run, since scheduler_events entries are called with no
+	arguments."""
+	cleanup_missing_invoice_failures(min_age_days=7, dry_run=0)
