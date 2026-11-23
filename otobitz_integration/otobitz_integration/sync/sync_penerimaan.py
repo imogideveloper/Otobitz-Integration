@@ -575,3 +575,21 @@ def cleanup_missing_invoice_failures(min_age_days: int = 7, dry_run: int = 1) ->
 			frappe.db.commit()
 
 	return report
+
+
+def daily_cleanup_missing_invoice_failures() -> None:
+	"""scheduler_events["daily"] entrypoint for cleanup_missing_invoice_failures()
+	- confirmed live (2026-11-20..23): deleting a permanently-unresolvable
+	"Sales Invoice belum ada" row doesn't stop it coming back. The exact same
+	nofaktur gets refetched and fails again within hours whenever the
+	underlying payment's own date is still inside the normal retry window
+	(fresh activity against an old, otherwise-dead invoice - e.g. a customer
+	settling an old debt), recreating a brand new Failed Sync row. Left to a
+	human to notice and manually re-run the cleanup every few days, this was
+	exactly the kind of slow, silent pileup this whole category was fixed
+	for in the first place. cleanup_missing_invoice_failures() itself
+	defaults to dry_run=1 (a human calling it ad hoc almost always wants a
+	preview first) - this wrapper exists purely to pass dry_run=0 for the
+	unattended daily run, since scheduler_events entries are called with no
+	arguments."""
+	cleanup_missing_invoice_failures(min_age_days=7, dry_run=0)
