@@ -154,6 +154,53 @@ def add_service_package_to_selling_workspace():
 			otobitz_ws.save(ignore_permissions=True)
 			frappe.db.commit()
 
+	# The Desk's own left sidebar tree does NOT read from "Workspace.links"
+	# above at all - confirmed live, editing that field left the sidebar
+	# showing the exact same list as before. It reads from a separate
+	# "Workspace Sidebar" document (one per workspace, its own "items" child
+	# table) that's only ever auto-(re)built for a workspace that doesn't
+	# have one yet - an already-existing one (every core workspace, Selling
+	# included) never gets refreshed from its Workspace's own links again.
+	# Both documents have to be kept in step by hand.
+	_add_service_package_to_workspace_sidebar("Selling", after_label="Campaign")
+	_remove_service_package_from_workspace_sidebar("OtoBitz Integration")
+
+
+def _add_service_package_to_workspace_sidebar(sidebar_title: str, after_label: str) -> None:
+	if not frappe.db.exists("Workspace Sidebar", sidebar_title):
+		return
+	doc = frappe.get_doc("Workspace Sidebar", sidebar_title)
+	if any(i.link_to == "Service Package" for i in doc.items):
+		return
+
+	new_row = doc.append(
+		"items",
+		{"type": "Link", "label": "Service Package", "link_to": "Service Package", "link_type": "DocType", "child": 1},
+	)
+	insert_at = next((i for i, it in enumerate(doc.items) if it.label == after_label), None)
+	if insert_at is not None:
+		doc.items.remove(new_row)
+		doc.items.insert(insert_at + 1, new_row)
+		for idx, it in enumerate(doc.items, start=1):
+			it.idx = idx
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _remove_service_package_from_workspace_sidebar(sidebar_title: str) -> None:
+	if not frappe.db.exists("Workspace Sidebar", sidebar_title):
+		return
+	doc = frappe.get_doc("Workspace Sidebar", sidebar_title)
+	stale = [i for i in doc.items if i.link_to == "Service Package"]
+	if not stale:
+		return
+	for i in stale:
+		doc.items.remove(i)
+	for idx, it in enumerate(doc.items, start=1):
+		it.idx = idx
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
 
 def ensure_salesperson_default():
 	"""One-off (idempotent): Sales Order-custom_salesperson defaults to the
