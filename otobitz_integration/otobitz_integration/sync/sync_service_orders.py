@@ -547,15 +547,11 @@ def _backfill_historical_cancelled_invoices(so_name: str, nomorwo: str, current_
 	see this function's own unconditional call site in _sync_one_wo()),
 	create one anyway and cancel it immediately.
 
-	The one thing that can't be reconstructed is which actual items that
-	cancelled attempt billed - OtoBitz's own BATAL INVOICE marker row never
-	carries an item breakdown (see log_so_detail_rows()'s own docstring in
-	common.py), only its own dpp/ppn/grandtotal. A single lump-sum
-	placeholder line (HISTORICAL_INVOICE_ITEM_CODE) sized to that DPP is
-	used instead of inventing a fake item breakdown - this invoice only
-	ever exists to be visible on the Sales Order as "yes, this was billed
-	and cancelled", not to carry a usable item-level record OtoBitz itself
-	never gave us."""
+	_create_historical_cancelled_invoice() below uses the cancelled
+	attempt's own real items when OtoBitz archived a full breakdown for it
+	(the usual case - see that function's own docstring), falling back to a
+	single lump-sum placeholder line (HISTORICAL_INVOICE_ITEM_CODE) sized
+	to this row's own DPP only when genuinely nothing resolves."""
 	rows = frappe.get_all(
 		"OtoBitz SO Detail",
 		filters={"nomorwo": nomorwo, "kodereferensi": ["in", ["", None]], "statuswo": ["!=", "FAKTUR"]},
@@ -589,8 +585,8 @@ def _backfill_historical_cancelled_invoices(so_name: str, nomorwo: str, current_
 				"reference_name": so_name,
 				"content": (
 					f"OtoBitz: invoice lama ({', '.join(created)}) ditemukan sudah dibatalkan OtoBitz "
-					f"sebelum sempat tersinkron sebagai invoice aktif - dibuat sebagai riwayat "
-					f"(1 baris ringkasan, bukan rincian item asli) lalu langsung dibatalkan juga."
+					f"sebelum sempat tersinkron sebagai invoice aktif - dibuat sebagai riwayat lalu "
+					f"langsung dibatalkan juga."
 				),
 			}
 		).insert(ignore_permissions=True)
@@ -612,25 +608,35 @@ def _create_historical_cancelled_invoice(
 		return None
 
 	so = frappe.get_doc("Sales Order", so_name)
+	item_cost_center = resolve_branch_cost_center(so.company, snapshot.get("kode_cabang"))
 
-	item_group = get_or_create_item_group("OtoBitz Service")
-	upsert(
-		"Item",
-		{"item_code": HISTORICAL_INVOICE_ITEM_CODE},
-		{
-			"item_name": "Invoice Dibatalkan OtoBitz (Riwayat)",
-			"item_group": item_group,
-			"stock_uom": get_or_create_uom("Units"),
-			"is_stock_item": 0,
-			"description": (
-				"Placeholder untuk invoice OtoBitz yang sudah dibatalkan sebelum sempat "
-				"tersinkron sebagai invoice aktif - rincian item aslinya tidak pernah dikirim "
-				"OtoBitz untuk invoice yang sudah dibatalkan, jadi dicatat 1 baris ringkasan saja."
-			),
-		},
-		ignore_mandatory=True,
-		create_only_fields={"stock_uom"},
+	# OtoBitz usually DOES archive a full item breakdown for a cancelled
+	# invoice attempt too, not just the header-only BATAL INVOICE marker row
+	# this function's own `raw_data` param came from - confirmed live,
+	# SO-302-261100180 and SO-110-261100149 both had every one of their
+	# cancelled invoice's real items archived under its own nofaktur
+	# (log_so_detail_rows() in common.py archives every row it's sent
+	# regardless of statuswo). This function used to assume otherwise and
+	# always fall back to a lump-sum placeholder line - only done now when
+	# genuinely nothing resolves (an item code that's fine on the live
+	# invoice but never made it into the Item master here, or a cancelled
+	# attempt old enough it predates archiving item-level rows at all):
+	# better an honest "something was billed and voided" marker than
+	# blocking this whole historical record over one bad line.
+	item_level_rows = frappe.get_all(
+		"OtoBitz SO Detail",
+		filters={"nomorwo": nomorwo, "nofaktur": nofaktur, "kodereferensi": ["is", "set"]},
+		fields=["raw_data"],
+		order_by="creation asc",
 	)
+	parsed_items = []
+	for r in item_level_rows:
+		try:
+			parsed_items.append(json.loads(r.raw_data or "{}"))
+		except ValueError:
+			continue
+	item_rows, unresolved_item_codes = _build_item_rows(parsed_items, item_cost_center) if parsed_items else ([], [])
+	use_real_items = bool(item_rows) and not unresolved_item_codes
 
 	si = frappe.new_doc("Sales Invoice")
 	si.customer = so.customer
@@ -652,11 +658,33 @@ def _create_historical_cancelled_invoice(
 	si.custom_otobitz_nofaktur = nofaktur
 	si.custom_plat_nomor = clean(snapshot.get("nopolisi"))
 
-	item_row = {"item_code": HISTORICAL_INVOICE_ITEM_CODE, "qty": 1, "rate": dpp, "sales_order": so_name}
-	cost_center = resolve_branch_cost_center(so.company, snapshot.get("kode_cabang"))
-	if cost_center:
-		item_row["cost_center"] = cost_center
-	si.append("items", item_row)
+	if use_real_items:
+		for item_row in item_rows:
+			item_row["sales_order"] = so_name
+			si.append("items", item_row)
+	else:
+		item_group = get_or_create_item_group("OtoBitz Service")
+		upsert(
+			"Item",
+			{"item_code": HISTORICAL_INVOICE_ITEM_CODE},
+			{
+				"item_name": "Invoice Dibatalkan OtoBitz (Riwayat)",
+				"item_group": item_group,
+				"stock_uom": get_or_create_uom("Units"),
+				"is_stock_item": 0,
+				"description": (
+					"Placeholder untuk invoice OtoBitz yang sudah dibatalkan - dipakai hanya "
+					"ketika rincian item asli invoice ini tidak (lagi) tersedia di arsip, bukan "
+					"default untuk setiap invoice yang dibatalkan."
+				),
+			},
+			ignore_mandatory=True,
+			create_only_fields={"stock_uom"},
+		)
+		item_row = {"item_code": HISTORICAL_INVOICE_ITEM_CODE, "qty": 1, "rate": dpp, "sales_order": so_name}
+		if item_cost_center:
+			item_row["cost_center"] = item_cost_center
+		si.append("items", item_row)
 
 	si.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
 	si.set("taxes", [])
@@ -926,22 +954,65 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 	if odometer:
 		so.custom_odometer = odometer
 
+	item_rows, unresolved_item_codes = _build_item_rows(wo_rows, item_cost_center)
+	for item_row in item_rows:
+		so.append("items", item_row)
+
+	if not so.items:
+		frappe.throw(f"No resolvable Items for Work Order {nomorwo}")
+	if unresolved_item_codes:
+		# Same error prefix as the all-items-missing throw above on purpose -
+		# categorize_error() in common.py matches on that exact leading
+		# phrase, so this lands in the same "Item tidak bisa di-resolve dari
+		# WO" Failed Sync bucket rather than "Lainnya". Aborting the whole WO
+		# here (not just logging a warning and keeping the partial Sales
+		# Order) is deliberate: a WO missing items is wrong in a way that's
+		# much worse silent than absent - see _build_item_rows()'s own
+		# docstring for the real money this already cost once.
+		frappe.throw(
+			f"No resolvable Items for Work Order {nomorwo} - "
+			f"missing from Item master: {', '.join(unresolved_item_codes)}"
+		)
+
+	# Same tax template as the Sales Invoice - without this the Sales Order's
+	# own grand_total is net-of-tax only, which doesn't match either OtoBitz's
+	# own quotation total (already tax-inclusive) or the Sales Invoice made
+	# from this SO, even though both describe the same Work Order.
+	so.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
+	so.set("taxes", [])
+	so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+	_pin_oto_taxes(so, header, company)
+
+	so.insert(ignore_permissions=True, ignore_mandatory=True)
+	so.submit()
+	return so.name
+
+
+def _build_item_rows(wo_rows: list, item_cost_center: str | None) -> tuple[list[dict], list[str]]:
+	"""Builds the item rows (Sales Order Item / Sales Invoice Item - both
+	share the fieldnames set here) from OtoBitz's own raw rows. Shared by
+	_create_sales_order() (the live, current invoice) and
+	_create_historical_cancelled_invoice() (a cancelled invoice attempt -
+	see that function's own docstring for why this used to mean a lump-sum
+	placeholder line instead of real items here).
+
+	Returns (item_rows, unresolved_item_codes). Tracks rows that named a
+	real item_code which just isn't in our Item master yet (NOT rows with
+	no kodereferensi at all, e.g. a header-only row - those are expected
+	and not a data-loss signal). Confirmed live: a WO can have SOME items
+	resolve and others not - the caller still inserts whichever items DID
+	resolve if it doesn't throw on unresolved_item_codes, but short by
+	however much the missing ones were worth. That missing amount doesn't
+	vanish - it gets absorbed into the Pembulatan tax row
+	(grand_total - dpp - ppn), which is where it actually surfaced:
+	SO-112-261100114 showed a nonsense Rp2,676,590 "rounding" that was
+	exactly the combined subtotal of 3 items (112TYC10002/3/4, a parts
+	series never onboarded into the Item master) silently dropped from a
+	7-item WO."""
 	sales_item_tax_template = (
 		SALES_ITEM_TAX_TEMPLATE if frappe.db.exists("Item Tax Template", SALES_ITEM_TAX_TEMPLATE) else None
 	)
-	# Tracks rows that named a real item_code which just isn't in our Item
-	# master yet (NOT rows with no kodereferensi at all, e.g. a header-only
-	# row - those are expected and not a data-loss signal). Confirmed live:
-	# a WO can have SOME items resolve and others not (previously a totally
-	# silent `continue`, no throw, since `if not so.items` only fires when
-	# EVERY item fails) - the Sales Order still gets created "successfully"
-	# with whichever items DID resolve, but short by however much the
-	# missing ones were worth. That missing amount doesn't vanish - it gets
-	# absorbed into the Pembulatan tax row (grand_total - dpp - ppn), which
-	# is where it actually surfaced: SO-112-261100114 showed a nonsense
-	# Rp2,676,590 "rounding" that was exactly the combined subtotal of 3
-	# items (112TYC10002/3/4, a parts series never onboarded into the Item
-	# master) silently dropped from a 7-item WO.
+	item_rows = []
 	unresolved_item_codes = []
 	for row in wo_rows:
 		item_code = clean(row.get("kodereferensi"))
@@ -1050,36 +1121,9 @@ def _create_sales_order(nomorwo: str, header: dict, wo_rows: list):
 		# fills the per-line Item Tax Template (PPN 11%, same account).
 		if sales_item_tax_template:
 			item_row["item_tax_template"] = sales_item_tax_template
-		so.append("items", item_row)
+		item_rows.append(item_row)
 
-	if not so.items:
-		frappe.throw(f"No resolvable Items for Work Order {nomorwo}")
-	if unresolved_item_codes:
-		# Same error prefix as the all-items-missing throw above on purpose -
-		# categorize_error() in common.py matches on that exact leading
-		# phrase, so this lands in the same "Item tidak bisa di-resolve dari
-		# WO" Failed Sync bucket rather than "Lainnya". Aborting the whole WO
-		# here (not just logging a warning and keeping the partial Sales
-		# Order) is deliberate: a WO missing items is wrong in a way that's
-		# much worse silent than absent - see this function's own note above
-		# unresolved_item_codes for the real money this already cost once.
-		frappe.throw(
-			f"No resolvable Items for Work Order {nomorwo} - "
-			f"missing from Item master: {', '.join(unresolved_item_codes)}"
-		)
-
-	# Same tax template as the Sales Invoice - without this the Sales Order's
-	# own grand_total is net-of-tax only, which doesn't match either OtoBitz's
-	# own quotation total (already tax-inclusive) or the Sales Invoice made
-	# from this SO, even though both describe the same Work Order.
-	so.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
-	so.set("taxes", [])
-	so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
-	_pin_oto_taxes(so, header, company)
-
-	so.insert(ignore_permissions=True, ignore_mandatory=True)
-	so.submit()
-	return so.name
+	return item_rows, unresolved_item_codes
 
 
 def _create_sales_invoice(nomorwo: str, so_name: str, header: dict) -> None:
