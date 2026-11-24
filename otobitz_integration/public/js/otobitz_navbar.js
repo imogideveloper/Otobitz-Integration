@@ -99,6 +99,31 @@
 					],
 				},
 				{
+					// Sales Order DRAFT asli (bukan arsip, beda dengan "Sales Order
+					// (WO)" di atas) - dibuat otomatis begitu booking punya DP
+					// masuk tapi OtoBitz belum mengubahnya jadi Work Order
+					// sungguhan (nomorso masih kosong di masterdata_bookingservicepernomor -
+					// lihat sync_booking.py's _create_draft_sales_order_from_booking()).
+					// Selalu docstatus 0 (Draft) selama ada di sini; begitu
+					// bookingnya beneran jadi WO, "Sales Order (WO)" yang
+					// sungguhan dibuat terpisah oleh sync_service_orders.py -
+					// draft ini TIDAK otomatis digabung/dihapus, jadi dua-duanya
+					// bisa kelihatan sekaligus untuk pekerjaan yang sama.
+					label: "SO Draft (Booking)",
+					icon: "calendar",
+					doctype: "Sales Order",
+					filters: { custom_otobitz_booking_number: ["is", "set"] },
+					embed: true,
+					columns: [
+						["custom_otobitz_booking_number", "No. Booking"],
+						["customer", "Customer"],
+						["custom_plat_nomor", "Plat Nomor"],
+						["transaction_date", "Tanggal", "Date"],
+						["status", "Status", "Status"],
+						["grand_total", "Total", "Currency"],
+					],
+				},
+				{
 					// Arsip mentah penerimaanuang (1 baris = 1 transaksi persis
 					// dari API) - bukan doctype Payment Entry bawaan, sama
 					// alasannya dengan Sales Order (WO) di atas.
