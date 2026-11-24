@@ -109,11 +109,22 @@
 					// sungguhan dibuat terpisah oleh sync_service_orders.py -
 					// draft ini TIDAK otomatis digabung/dihapus, jadi dua-duanya
 					// bisa kelihatan sekaligus untuk pekerjaan yang sama.
+					//
+					// detailDialog (bukan langsung buka Form) - reported live:
+					// klik baris semula langsung lompat ke Form Sales Order asli,
+					// user maunya ada ringkasan dulu (customer/plat/item/total)
+					// sebelum itu, dengan tombol "Buka Sales Order" buat yang mau
+					// edit. Beda dengan "Sales Order (WO)" di atas (yang arsip
+					// mentahnya butuh get_wo_summary() buat DIGABUNGKAN jadi satu
+					// ringkasan dari banyak baris): draft ini sudah satu dokumen
+					// Sales Order utuh, jadi ringkasannya cukup dialog ringan dari
+					// doc yang sama, bukan halaman/doctype baru.
 					label: "SO Draft (Booking)",
 					icon: "calendar",
 					doctype: "Sales Order",
 					filters: { custom_otobitz_booking_number: ["is", "set"] },
 					embed: true,
+					detailDialog: true,
 					columns: [
 						["custom_otobitz_booking_number", "No. Booking"],
 						["customer", "Customer"],
@@ -474,13 +485,118 @@
 				body
 		);
 		$area.find("tbody tr[data-name]").on("click", function () {
-			frappe.set_route("Form", $(this).data("doctype"), $(this).data("name"));
+			const name = $(this).data("name");
+			// item.detailDialog items (currently just "SO Draft (Booking)")
+			// show a read-only summary dialog first instead of jumping
+			// straight to the real Form - see that item's own comment above.
+			if (item.detailDialog) {
+				showDetailDialog(item, name);
+				return;
+			}
+			frappe.set_route("Form", $(this).data("doctype"), name);
 		});
 		$area.find("#ob-refresh-btn").on("click", function () {
 			const $btn = $(this).addClass("ob-spin");
 			renderEmbeddedList(item);
 			setTimeout(() => $btn.removeClass("ob-spin"), 500);
 		});
+	}
+
+	// ---- Detail dialog (item.detailDialog items only) ----
+	//
+	// Only "SO Draft (Booking)" uses this so far - a lightweight read-only
+	// summary (customer, plat nomor, items, totals) shown before jumping to
+	// the real Form, since a draft Sales Order is already one complete
+	// document (unlike "Sales Order (WO)"'s own archive rows, which need
+	// get_wo_summary() to join many rows into one view in the first place).
+	// Dispatches on doctype so a future detailDialog item isn't forced into
+	// this exact same layout.
+	function showDetailDialog(item, name) {
+		if (item.doctype === "Sales Order") {
+			showSalesOrderDraftDialog(name);
+			return;
+		}
+		frappe.set_route("Form", item.doctype, name);
+	}
+
+	function showSalesOrderDraftDialog(name) {
+		frappe.call({
+			method: "frappe.client.get",
+			args: { doctype: "Sales Order", name },
+			freeze: true,
+		}).then((r) => {
+			const doc = r.message;
+			if (!doc) return;
+			renderSalesOrderDraftDialog(doc);
+		});
+	}
+
+	function sodd_field(label, valueHtml) {
+		return (
+			`<div style="display:flex;flex-direction:column;gap:2px;">` +
+			`<div style="font-size:11px;color:var(--text-muted);">${frappe.utils.escape_html(label)}</div>` +
+			`<div style="font-size:13px;">${valueHtml}</div></div>`
+		);
+	}
+
+	function renderSalesOrderDraftDialog(doc) {
+		const dash = (v) => (v === null || v === undefined || v === "" ? "-" : frappe.utils.escape_html(String(v)));
+		const items_rows = (doc.items || [])
+			.map(
+				(it, i) => `
+				<tr>
+					<td>${i + 1}</td>
+					<td>${dash(it.item_code)}</td>
+					<td>${dash(it.item_name)}</td>
+					<td class="text-right">${flt(it.qty).toLocaleString("id-ID")}</td>
+					<td class="text-right">${frappe.utils.escape_html(format_currency(it.rate))}</td>
+					<td class="text-right">${frappe.utils.escape_html(format_currency(it.amount))}</td>
+				</tr>`
+			)
+			.join("");
+		const tax_total = (doc.taxes || []).reduce((a, t) => a + flt(t.tax_amount), 0);
+
+		const header_grid =
+			`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 20px;margin-bottom:18px;">` +
+			sodd_field("No. Booking", dash(doc.custom_otobitz_booking_number)) +
+			sodd_field("Customer", `<b>${dash(doc.customer)}</b>`) +
+			sodd_field("Plat Nomor", dash(doc.custom_plat_nomor)) +
+			sodd_field("Tipe Kendaraan", dash(doc.custom_vehicle_type)) +
+			sodd_field("Tanggal", dash(frappe.datetime.str_to_user(doc.transaction_date))) +
+			sodd_field("Status", `<span class="indicator-pill gray no-indicator-dot">${dash(doc.status)}</span>`) +
+			`</div>` +
+			(doc.custom_keluhan
+				? `<div style="margin-bottom:18px;">${sodd_field("Keluhan", dash(doc.custom_keluhan))}</div>`
+				: "");
+
+		const items_table =
+			`<div class="ob-table-wrap" style="border:1px solid var(--border-color);border-radius:8px;overflow:hidden;margin-bottom:14px;">` +
+			`<table class="table table-bordered" style="margin-bottom:0;"><thead><tr>` +
+			`<th>No.</th><th>Kode Item</th><th>Nama Item</th><th class="text-right">Qty</th>` +
+			`<th class="text-right">Harga</th><th class="text-right">Subtotal</th></tr></thead>` +
+			`<tbody>${items_rows || `<tr><td colspan="6" class="text-muted text-center">${__("Tidak ada item")}</td></tr>`}</tbody>` +
+			`</table></div>`;
+
+		const totals =
+			`<div style="background:var(--control-bg);border-radius:8px;padding:12px 16px;display:flex;flex-direction:column;gap:4px;">` +
+			`<div style="display:flex;justify-content:space-between;"><span>${__("Net Total")}</span><span>${frappe.utils.escape_html(format_currency(doc.net_total))}</span></div>` +
+			`<div style="display:flex;justify-content:space-between;"><span>${__("Pajak")}</span><span>${frappe.utils.escape_html(format_currency(tax_total))}</span></div>` +
+			`<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-color);margin-top:4px;padding-top:6px;font-weight:700;">` +
+			`<span>${__("Grand Total")}</span><span>${frappe.utils.escape_html(format_currency(doc.grand_total))}</span></div>` +
+			`</div>`;
+
+		const dialog = new frappe.ui.Dialog({
+			title: __("SO Draft: {0}", [doc.custom_otobitz_booking_number || doc.name]),
+			size: "large",
+			fields: [{ fieldname: "preview_html", fieldtype: "HTML" }],
+			primary_action_label: __("Buka Sales Order"),
+			primary_action: () => {
+				dialog.hide();
+				frappe.set_route("Form", "Sales Order", doc.name);
+			},
+		});
+		dialog.fields_dict.preview_html.$wrapper.html(header_grid + items_table + totals);
+		dialog.show();
 	}
 
 	function buildNavbar() {
