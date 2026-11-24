@@ -93,6 +93,49 @@ def hide_desktop_icons():
 	frappe.cache.delete_key("desktop_icons")
 
 
+def add_service_package_to_selling_workspace():
+	"""Adds a link to this app's own "Service Package" DocType into the core
+	erpnext "Selling" workspace, right alongside Customer/Customer Group/etc
+	under its "Settings" card - reported live: "service package itu jangan
+	disimpan di doctype Otobitz Integration, tapi disimpen di bagian module
+	selling... bagian setup".
+
+	Deliberately NOT tracked as this app's own fixture for the whole
+	"Workspace Selling" document - erpnext owns that document outright, and
+	exporting it wholesale as an otobitz_integration fixture risks either
+	app's own fixture-sync silently reverting the other's version of it on
+	a later migrate (confirmed live elsewhere in this app: reapply_fixtures()
+	above exists for exactly this class of problem, imogi_finance's own
+	fixtures winning a naming collision). A small, idempotent append here
+	instead, re-checked on every migrate (same as this module's other
+	after_migrate hooks) so it's self-healing if erpnext's own workspace
+	sync ever resets Selling back to its shipped state."""
+	if not frappe.db.exists("Workspace", "Selling"):
+		return
+	doc = frappe.get_doc("Workspace", "Selling")
+	if any(l.link_to == "Service Package" for l in doc.links):
+		return
+
+	new_row = doc.append(
+		"links",
+		{"type": "Link", "label": "Service Package", "link_to": "Service Package", "link_type": "DocType"},
+	)
+	# Right after "Campaign", the last entry of the "Settings" card group -
+	# the same group Customer Group/Contact/Address/Territory already sit
+	# in. Falls back to leaving it appended at the end (still a valid,
+	# just less tidily-grouped, link) if that label's ever renamed/removed
+	# upstream.
+	insert_at = next((i for i, l in enumerate(doc.links) if l.label == "Campaign"), None)
+	if insert_at is not None:
+		doc.links.remove(new_row)
+		doc.links.insert(insert_at + 1, new_row)
+		for idx, l in enumerate(doc.links, start=1):
+			l.idx = idx
+
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+
 def ensure_salesperson_default():
 	"""One-off (idempotent): Sales Order-custom_salesperson defaults to the
 	logged-in user ("__user") for anyone building a Sales Order by hand in
