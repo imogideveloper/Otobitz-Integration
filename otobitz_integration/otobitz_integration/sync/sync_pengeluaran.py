@@ -251,6 +251,11 @@ def _create_payment_entry(nomor: str, row: dict) -> str:
 	pe.paid_amount = amount
 	pe.received_amount = amount
 	pe.custom_otobitz_receipt_number = nomor
+	# Already existed as a Select field on Payment Entry (with exactly this
+	# endpoint's own name as one of its options) but nothing ever actually
+	# set it - see sync_penerimaan.py's own _create_payment_entry() for the
+	# same fix.
+	pe.custom_otobitz_endpoint = "pengeluaranuang"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:
