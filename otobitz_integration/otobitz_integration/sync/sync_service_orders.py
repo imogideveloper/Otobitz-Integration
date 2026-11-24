@@ -51,6 +51,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	safe_name,
 	sane_int,
 	set_period_fields,
+	sync_lock_guard,
 	sync_so_payment_status,
 	upsert,
 )
@@ -1240,12 +1241,31 @@ def force_resync_wo(nomorwo: str) -> dict:
 	yet), this is explicitly destructive - not safe to run blindly/on a
 	schedule. Meant for one specific WO an admin already has a concrete
 	reason to suspect is stale (a mismatch spotted by hand, same as this
-	one was), not a sweep."""
+	one was), not a sweep.
+
+	Runs under sync_lock_guard() - this deletes and rebuilds the exact same
+	Sales Order/Invoice/Payment Entry rows the regular hourly sync also
+	writes to, with none of _sync_one_wo()'s own "does it already exist"
+	checks protecting against the two colliding. Without the lock, a force
+	resync landing mid-hourly-run could race the hourly sync's own write to
+	this same WO - exactly the "Record has changed since last read" class
+	of bug a concurrent manual script caused live once already (see
+	sync_lock_guard()'s own docstring in common.py). raises immediately
+	(not a silent wait) if the hourly sync currently holds it, so a request
+	that's urgent enough to reach for this button gets a fast, clear
+	"try again shortly" instead of queueing behind however long that run
+	takes - see this module's own background_workers note for why a request
+	could otherwise sit queued for a long time with no feedback at all."""
 	frappe.only_for("System Manager")
 	nomorwo = clean(nomorwo)
 	if not nomorwo:
 		frappe.throw("Enter a Work Order number (nomorwo).")
 
+	with sync_lock_guard(f"force resync WO {nomorwo}"):
+		return _force_resync_wo(nomorwo)
+
+
+def _force_resync_wo(nomorwo: str) -> dict:
 	so_name = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 	si_name = frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
 	deleted = {"sales_order": None, "sales_invoice": None, "payment_entries": [], "purchase_orders_cancelled": []}
