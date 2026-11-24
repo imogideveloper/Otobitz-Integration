@@ -183,6 +183,13 @@ def _add_service_package_to_workspace_sidebar(sidebar_title: str, after_label: s
 		doc.items.insert(insert_at + 1, new_row)
 		for idx, it in enumerate(doc.items, start=1):
 			it.idx = idx
+	# Not this function's job to fix some unrelated pre-existing bad row in
+	# this same sidebar (confirmed live, Selling's own had one: "Import
+	# Data" pointing at a Page that no longer resolves) - Document.save()
+	# validates every link on the whole document, not just the one just
+	# appended here, so a single already-broken row would otherwise block
+	# this save entirely.
+	doc.flags.ignore_links = True
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -198,6 +205,7 @@ def _remove_service_package_from_workspace_sidebar(sidebar_title: str) -> None:
 		doc.items.remove(i)
 	for idx, it in enumerate(doc.items, start=1):
 		it.idx = idx
+	doc.flags.ignore_links = True
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 
