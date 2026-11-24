@@ -109,31 +109,50 @@ def add_service_package_to_selling_workspace():
 	fixtures winning a naming collision). A small, idempotent append here
 	instead, re-checked on every migrate (same as this module's other
 	after_migrate hooks) so it's self-healing if erpnext's own workspace
-	sync ever resets Selling back to its shipped state."""
+	sync ever resets Selling back to its shipped state.
+
+	Also strips the old link from this app's own "OtoBitz Integration"
+	workspace - confirmed live, removing that entry from this app's
+	workspace JSON fixture didn't retroactively delete it from the
+	already-existing Workspace row on the next `bench migrate` (fixture
+	import upserts, it doesn't prune), leaving Service Package listed in
+	BOTH workspaces at once. Done here (in code, re-checked every migrate)
+	rather than a one-off manual delete, so it's gone for good regardless
+	of whatever fixture-sync does or doesn't do to that row."""
 	if not frappe.db.exists("Workspace", "Selling"):
 		return
 	doc = frappe.get_doc("Workspace", "Selling")
-	if any(l.link_to == "Service Package" for l in doc.links):
-		return
+	already_in_selling = any(l.link_to == "Service Package" for l in doc.links)
 
-	new_row = doc.append(
-		"links",
-		{"type": "Link", "label": "Service Package", "link_to": "Service Package", "link_type": "DocType"},
-	)
-	# Right after "Campaign", the last entry of the "Settings" card group -
-	# the same group Customer Group/Contact/Address/Territory already sit
-	# in. Falls back to leaving it appended at the end (still a valid,
-	# just less tidily-grouped, link) if that label's ever renamed/removed
-	# upstream.
-	insert_at = next((i for i, l in enumerate(doc.links) if l.label == "Campaign"), None)
-	if insert_at is not None:
-		doc.links.remove(new_row)
-		doc.links.insert(insert_at + 1, new_row)
-		for idx, l in enumerate(doc.links, start=1):
-			l.idx = idx
+	if not already_in_selling:
+		new_row = doc.append(
+			"links",
+			{"type": "Link", "label": "Service Package", "link_to": "Service Package", "link_type": "DocType"},
+		)
+		# Right after "Campaign", the last entry of the "Settings" card group -
+		# the same group Customer Group/Contact/Address/Territory already sit
+		# in. Falls back to leaving it appended at the end (still a valid,
+		# just less tidily-grouped, link) if that label's ever renamed/removed
+		# upstream.
+		insert_at = next((i for i, l in enumerate(doc.links) if l.label == "Campaign"), None)
+		if insert_at is not None:
+			doc.links.remove(new_row)
+			doc.links.insert(insert_at + 1, new_row)
+			for idx, l in enumerate(doc.links, start=1):
+				l.idx = idx
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
 
-	doc.save(ignore_permissions=True)
-	frappe.db.commit()
+	if frappe.db.exists("Workspace", "OtoBitz Integration"):
+		otobitz_ws = frappe.get_doc("Workspace", "OtoBitz Integration")
+		stale_links = [l for l in otobitz_ws.links if l.link_to == "Service Package"]
+		if stale_links:
+			for l in stale_links:
+				otobitz_ws.links.remove(l)
+			for idx, l in enumerate(otobitz_ws.links, start=1):
+				l.idx = idx
+			otobitz_ws.save(ignore_permissions=True)
+			frappe.db.commit()
 
 
 def ensure_salesperson_default():
