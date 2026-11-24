@@ -351,6 +351,22 @@ def _sync_one_wo(
 	if needs_customer_lookup is None:
 		needs_customer_lookup = _needs_customer_lookup(endpoint_name)
 
+	# Drop BATAL INVOICE rows whenever this same WO also has rows from a
+	# live (non-cancelled) invoice attempt in this same fetch - confirmed
+	# live, SO-302-261100180: invoice SV-302-261100203 (5 items, incl. a
+	# Rp626,125 TMO SYN line) got cancelled and reissued same-batch as
+	# SV-302-261100204 (4 of those same item codes, minus the TMO SYN one).
+	# Without this, the item-building loop in _create_sales_order() below
+	# iterates every row across BOTH invoice attempts with no awareness
+	# that one of them is void - the resulting Sales Order silently carried
+	# all 9 rows: the voided invoice's own TMO SYN line plus every item
+	# code common to both invoices TWICE over. Falls back to using every
+	# row unfiltered only if literally all of them are BATAL INVOICE (WO
+	# with no live invoice at all in this fetch) - same as before this fix.
+	live_rows = [r for r in wo_rows if (r.get("statuswo") or "").strip().upper() != "BATAL INVOICE"]
+	if live_rows:
+		wo_rows = live_rows
+
 	# NOT just wo_rows[0] - confirmed live (otoxpertsoandpartpernomor,
 	# SO-302-261100131) that OtoBitz's API can prepend a phantom row with no
 	# kodereferensi at all and its OWN inconsistent dpp/ppn/grandtotal,
