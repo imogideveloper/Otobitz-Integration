@@ -318,6 +318,13 @@ def _create_payment_entry(nomor: str, si_name: str, nofaktur: str, row: dict) ->
 	# nofaktur (unique per invoice), NOT the shared nomor - see module
 	# docstring and _sync_one_receipt()'s own docstring for why.
 	pe.custom_otobitz_receipt_number = nofaktur
+	# Already existed as a Select field on Payment Entry (with exactly this
+	# endpoint's own name as one of its options) but nothing ever actually
+	# set it - reported live: no way to tell a regular invoice payment
+	# apart from a booking advance (sync_booking.py's own Payment Entries)
+	# without reading the References table or guessing from the receipt
+	# number's own prefix.
+	pe.custom_otobitz_endpoint = "penerimaanuang"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:

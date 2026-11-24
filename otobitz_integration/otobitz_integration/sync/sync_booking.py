@@ -172,6 +172,14 @@ def _create_advance_payment_entry(allocation_ref: str, nomor: str, row: dict) ->
 	# receipt number - this is what makes dedup correct when one receipt
 	# covers several bookings.
 	pe.custom_otobitz_receipt_number = allocation_ref
+	# Already existed as a Select field on Payment Entry (with exactly this
+	# endpoint's own name as one of its options) but nothing ever actually
+	# set it - see sync_penerimaan.py's own _create_payment_entry() for the
+	# same fix. A booking advance's own Payment Entry Reference table is
+	# always empty (there's no invoice yet to allocate against), which is
+	# the other visible tell, but this field says so directly instead of
+	# making anyone infer it.
+	pe.custom_otobitz_endpoint = "penerimaanuangmukabooking"
 	if branch:
 		pe.custom_otobitz_branch = branch
 	if mode_of_payment:
