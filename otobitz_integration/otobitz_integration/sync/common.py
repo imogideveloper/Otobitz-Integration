@@ -608,11 +608,22 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 	resolvable customer, no resolvable items, cancelled, whatever) still shows
 	up here exactly as OtoBitz sent it, because the archive's whole purpose is
 	to answer "what did OtoBitz actually say" independent of how the
-	downstream documents turned out. Dedup/upsert key is `nomorwo + kodereferensi`
-	(one Work Order's rows are always distinct per item code - see the
-	masterdata_sparepart-style flat-join notes in sync_service_orders.py) so a
-	re-fetch of the same window (the sync's own overlap days, or a manual
-	re-run) updates the existing row in place instead of duplicating it.
+	downstream documents turned out. Dedup/upsert key is
+	`nomorwo + nofaktur + kodereferensi` - an item code is only distinct per
+	invoice ATTEMPT, not per Work Order. Confirmed live, SO-302-261100180:
+	invoice SV-302-261100203 got cancelled (BATAL INVOICE) and reissued as
+	SV-302-261100204 sharing 4 of its 5 item codes with the voided one, both
+	arriving in the same fetch. Keying on nomorwo+kodereferensi alone (no
+	nofaktur) let whichever row for a shared item code was processed last
+	silently overwrite the other's - the cancelled invoice's own archived
+	snapshot ended up showing the REISSUED invoice's items/amounts instead,
+	and _upsert_wo_summary_row()'s own `nofaktur`-filtered query below then
+	couldn't find its real items either, since their stored `nofaktur` field
+	had been overwritten too. With nofaktur in the key, a re-fetch of the
+	same window (the sync's own overlap days, or a manual re-run) still
+	correctly updates each invoice attempt's own rows in place instead of
+	duplicating them - it just no longer confuses two different attempts'
+	rows for the same item code with each other.
 
 	Every individual item/status row is still archived exactly as before -
 	none of that fidelity is lost. On top of that, one extra `is_wo_summary_row`
@@ -634,7 +645,7 @@ def log_so_detail_rows(rows: list[dict], endpoint: str = "otoxpertsoandpartnonde
 		kodereferensi = clean(row.get("kodereferensi"))
 		nofaktur = clean(row.get("nofaktur"))
 		if kodereferensi:
-			dedup_key = f"{nomorwo}|{kodereferensi}"
+			dedup_key = f"{nomorwo}|{nofaktur}|{kodereferensi}"
 		elif nofaktur:
 			# A header-only row with no item at all - confirmed live,
 			# OtoBitz sends exactly this shape for the "BATAL INVOICE"

@@ -51,6 +51,7 @@ from otobitz_integration.otobitz_integration.sync.common import (
 	safe_name,
 	sane_int,
 	set_period_fields,
+	sync_lock_guard,
 	sync_so_payment_status,
 	upsert,
 )
@@ -350,6 +351,22 @@ def _sync_one_wo(
 	endpoint's rows are worth running through _decrypted_header() at all."""
 	if needs_customer_lookup is None:
 		needs_customer_lookup = _needs_customer_lookup(endpoint_name)
+
+	# Drop BATAL INVOICE rows whenever this same WO also has rows from a
+	# live (non-cancelled) invoice attempt in this same fetch - confirmed
+	# live, SO-302-261100180: invoice SV-302-261100203 (5 items, incl. a
+	# Rp626,125 TMO SYN line) got cancelled and reissued same-batch as
+	# SV-302-261100204 (4 of those same item codes, minus the TMO SYN one).
+	# Without this, the item-building loop in _create_sales_order() below
+	# iterates every row across BOTH invoice attempts with no awareness
+	# that one of them is void - the resulting Sales Order silently carried
+	# all 9 rows: the voided invoice's own TMO SYN line plus every item
+	# code common to both invoices TWICE over. Falls back to using every
+	# row unfiltered only if literally all of them are BATAL INVOICE (WO
+	# with no live invoice at all in this fetch) - same as before this fix.
+	live_rows = [r for r in wo_rows if (r.get("statuswo") or "").strip().upper() != "BATAL INVOICE"]
+	if live_rows:
+		wo_rows = live_rows
 
 	# NOT just wo_rows[0] - confirmed live (otoxpertsoandpartpernomor,
 	# SO-302-261100131) that OtoBitz's API can prepend a phantom row with no
@@ -1224,12 +1241,31 @@ def force_resync_wo(nomorwo: str) -> dict:
 	yet), this is explicitly destructive - not safe to run blindly/on a
 	schedule. Meant for one specific WO an admin already has a concrete
 	reason to suspect is stale (a mismatch spotted by hand, same as this
-	one was), not a sweep."""
+	one was), not a sweep.
+
+	Runs under sync_lock_guard() - this deletes and rebuilds the exact same
+	Sales Order/Invoice/Payment Entry rows the regular hourly sync also
+	writes to, with none of _sync_one_wo()'s own "does it already exist"
+	checks protecting against the two colliding. Without the lock, a force
+	resync landing mid-hourly-run could race the hourly sync's own write to
+	this same WO - exactly the "Record has changed since last read" class
+	of bug a concurrent manual script caused live once already (see
+	sync_lock_guard()'s own docstring in common.py). raises immediately
+	(not a silent wait) if the hourly sync currently holds it, so a request
+	that's urgent enough to reach for this button gets a fast, clear
+	"try again shortly" instead of queueing behind however long that run
+	takes - see this module's own background_workers note for why a request
+	could otherwise sit queued for a long time with no feedback at all."""
 	frappe.only_for("System Manager")
 	nomorwo = clean(nomorwo)
 	if not nomorwo:
 		frappe.throw("Enter a Work Order number (nomorwo).")
 
+	with sync_lock_guard(f"force resync WO {nomorwo}"):
+		return _force_resync_wo(nomorwo)
+
+
+def _force_resync_wo(nomorwo: str) -> dict:
 	so_name = frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorwo})
 	si_name = frappe.db.get_value("Sales Invoice", {"custom_otobitz_wo_number": nomorwo})
 	deleted = {"sales_order": None, "sales_invoice": None, "payment_entries": [], "purchase_orders_cancelled": []}
