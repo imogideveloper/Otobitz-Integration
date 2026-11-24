@@ -20,28 +20,52 @@ identity: dedup and `custom_otobitz_receipt_number` key off it, while `nomor`
 (the shared receipt) still lands on `reference_no` so every Payment Entry
 split off one receipt stays visibly grouped together.
 
-This endpoint also doesn't carry a customer id/code anywhere - only
-`namacustomer` as free text. Resolving the Customer is therefore a best-
-effort exact-name match against `customer_name`; a receipt whose name
-doesn't match an existing Customer exactly (new customer, spelling
-variant, duplicate name) is skipped and logged rather than guessed at or
-used to create a new, likely-duplicate Customer record.
+This endpoint itself doesn't carry a customer id/code anywhere - only
+`namacustomer` as free text. The booking it belongs to does, though:
+`masterdata_bookingservicepernomor` (looked up here by the same
+`noreferensi`/`allocation_ref`, a "BKS-..." number both endpoints share)
+carries `nomor_customer`, a stable code confirmed live to be the exact
+same code space as `otoxpertsoandpart`'s own `customerid` (a customer
+already created from a Work Order and a customer only ever seen here so
+far both resolve/get-or-created by that one shared field,
+custom_otobitz_customer_id - no duplicate Customer either way). That
+lookup, fired once per booking right alongside its first advance Payment
+Entry, is now the PRIMARY way the Customer below gets resolved; the old
+free-text exact-name match against `customer_name` only still runs as a
+fallback, for whenever the detail lookup itself can't be done (the
+endpoint down, or this booking's own number genuinely not found there).
+
+That same lookup also carries a real item `detail[]` array and the
+booking's own `nomorso` once OtoBitz converts it into a Work Order -
+enough to build a DRAFT Sales Order (parts, customer, vehicle) the moment
+the advance payment comes in, before there's a Work Order to sync at all.
+Reported live: "kedepannya kalau ada ini [booking] akan membuat SO draft,
+detail dari part nya customer nya dan lainnya ... sudah ada kan di
+endpoint itu" - see `_create_draft_sales_order_from_booking()` below.
 """
 
 import time
 
 import frappe
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_bank_cash_account
+from erpnext.controllers.accounts_controller import get_taxes_and_charges
 from frappe.utils import add_days, cint, flt, get_first_day, getdate, nowdate
 
 from otobitz_integration.otobitz_integration.api.client import OtoBitzAPIError, call_api
 from otobitz_integration.otobitz_integration.sync.common import (
+	IMOGIBOT_USER,
 	clean,
 	log_booking_detail_row,
 	log_failed_sync,
 	renew_sync_lock,
 	resolve_failed_sync,
+	safe_name,
 	set_period_fields,
+	upsert,
+)
+from otobitz_integration.otobitz_integration.sync.sync_service_orders import (
+	TAXES_AND_CHARGES_TEMPLATE,
+	_pin_oto_taxes,
 )
 
 WATERMARK_FIELD = "last_booking_sync_date"
@@ -142,15 +166,40 @@ def _sync_one_booking(allocation_ref: str, nomor: str, row: dict) -> bool:
 	if existing:
 		return False
 
-	_create_advance_payment_entry(allocation_ref, nomor, row)
+	# One shared lookup - see the module docstring - feeds the Customer
+	# into BOTH the Payment Entry below (replacing the old name-match as
+	# the primary path, not just a nice-to-have for the draft SO) and the
+	# draft Sales Order. Never raises (see _fetch_booking_detail()'s own
+	# docstring): a lookup miss just falls back to _create_advance_payment_entry()'s
+	# own old name-match, same as before this existed.
+	booking_detail = _fetch_booking_detail(allocation_ref)
+	resolved_customer = _resolve_booking_customer(booking_detail) if booking_detail else None
+
+	_create_advance_payment_entry(allocation_ref, nomor, row, customer_override=resolved_customer)
+	# Best-effort, never fatal to this booking's Payment Entry - see that
+	# function's own docstring for why it swallows its own errors instead
+	# of raising.
+	_create_draft_sales_order_from_booking(allocation_ref, detail=booking_detail, customer=resolved_customer)
 	return True
 
 
-def _create_advance_payment_entry(allocation_ref: str, nomor: str, row: dict) -> str:
-	customer_name = clean(row.get("namacustomer"))
-	customer = customer_name and frappe.db.get_value("Customer", {"customer_name": customer_name})
+def _create_advance_payment_entry(
+	allocation_ref: str, nomor: str, row: dict, customer_override: str | None = None
+) -> str:
+	# customer_override - resolved from masterdata_bookingservicepernomor's
+	# own stable nomor_customer, via _sync_one_booking() - is now the
+	# PRIMARY path (fixes the real "Customer tidak ditemukan berdasarkan
+	# nama" Failed Sync category this module's own docstring used to
+	# document as a hard limitation). The old free-text name match below
+	# only still runs as a fallback, for whenever that lookup itself
+	# genuinely can't be done (the detail endpoint down, or this booking's
+	# own number not found there for some reason).
+	customer = customer_override
 	if not customer:
-		frappe.throw(f"No Customer found matching name {customer_name!r} (booking advance {allocation_ref})")
+		customer_name = clean(row.get("namacustomer"))
+		customer = customer_name and frappe.db.get_value("Customer", {"customer_name": customer_name})
+	if not customer:
+		frappe.throw(f"No Customer found matching name {clean(row.get('namacustomer'))!r} (booking advance {allocation_ref})")
 
 	company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
 	mode_of_payment = frappe.db.get_value(
@@ -203,6 +252,212 @@ def _create_advance_payment_entry(allocation_ref: str, nomor: str, row: dict) ->
 	pe.insert(ignore_permissions=True, ignore_mandatory=True)
 	pe.submit()
 	return pe.name
+
+
+def _fetch_booking_detail(nomor_booking: str) -> dict | None:
+	"""The one record masterdata_bookingservicepernomor returns for this
+	booking's own "BKS-..." number - note this is NOT the same kind of
+	`nomor` penerimaanuangmukabooking itself uses (that one is the shared
+	cash/QRIS receipt number, confirmed live to return "Data not found"
+	here). Returns None (not a throw) on a lookup miss/failure, same stance
+	as _resolve_customer_info() in sync_service_orders.py - this whole
+	draft-SO feature is a nice-to-have on top of the advance payment, never
+	something worth failing that payment's own sync over."""
+	try:
+		response = call_api("masterdata_bookingservicepernomor", {"nomor": nomor_booking})
+	except OtoBitzAPIError:
+		frappe.log_error(title=f"OtoBitz sync: masterdata_bookingservicepernomor failed for booking {nomor_booking}")
+		return None
+	rows = response.get("data-booking") or []
+	return rows[0] if rows else None
+
+
+def _resolve_booking_customer(detail: dict) -> str | None:
+	"""Get-or-create the Customer from this booking's own `nomor_customer` -
+	the same stable OtoBitz code space as otoxpertsoandpart's `customerid`
+	(both keyed here on the same custom_otobitz_customer_id field), unlike
+	penerimaanuangmukabooking's own rows which only ever carry a free-text
+	name. A booking whose customer already exists (created earlier from a
+	real Work Order, or an earlier booking) is matched and reused here
+	rather than risking a second, duplicate Customer for the same person."""
+	customer_code = clean(detail.get("nomor_customer"))
+	if not customer_code:
+		return None
+	values = {
+		"customer_name": safe_name(detail.get("nama_customer")) or customer_code,
+		"customer_type": "Individual",
+		"custom_otobitz_customer_id": customer_code,
+	}
+	name, _, _ = upsert("Customer", {"custom_otobitz_customer_id": customer_code}, values, ignore_mandatory=True)
+	return name
+
+
+def _build_booking_item_rows(detail_rows: list) -> tuple[list[dict], list[str]]:
+	"""Item rows for the draft Sales Order below, from this booking's own
+	planned `detail[]` array - a simpler version of sync_service_orders.py's
+	own _build_item_rows(): a booking estimate carries no discperitem/
+	subtotalppn/jenisdoc at all, just kodereferensi/qty/harga/subtotal, so
+	none of that function's OtoBitz-rounding-quirk corrections apply here.
+	Returns (item_rows, unresolved_item_codes) - same meaning as there, a
+	part code genuinely missing from the Item master, not a line with no
+	code at all."""
+	item_rows = []
+	unresolved_item_codes = []
+	for row in detail_rows:
+		item_code = clean(row.get("kodereferensi"))
+		if not item_code:
+			continue
+		if not frappe.db.exists("Item", item_code):
+			unresolved_item_codes.append(item_code)
+			continue
+		stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Units"
+		qty = flt(row.get("qty"))
+		subtotal = flt(row.get("subtotal"))
+		if qty < 0.01:
+			# Same free/bundled-line guard as sync_service_orders.py's own
+			# _build_item_rows() - force qty to 1 at a rate equal to the
+			# line's own subtotal (0 for a genuinely free line) instead of
+			# multiplying a real per-unit price into a qty that rounds away
+			# to nothing.
+			qty = 1
+			rate = subtotal
+		elif subtotal:
+			rate = subtotal / qty
+		else:
+			rate = flt(row.get("harga"))
+		item_rows.append(
+			{
+				"item_code": item_code,
+				"qty": qty,
+				"rate": rate,
+				"price_list_rate": rate,
+				"uom": stock_uom,
+				"conversion_factor": 1,
+			}
+		)
+	return item_rows, unresolved_item_codes
+
+
+def _create_draft_sales_order_from_booking(
+	allocation_ref: str, detail: dict | None = None, customer: str | None = None
+) -> str | None:
+	"""Builds a DRAFT Sales Order (docstatus=0) for this booking's own
+	planned parts/jasa and customer, the moment OtoBitz reports its first
+	advance payment - see the module docstring for why
+	masterdata_bookingservicepernomor is what makes this possible at all.
+
+	`detail`/`customer`, when passed in, are the SAME lookup
+	_sync_one_booking() already did for the Payment Entry itself - avoids
+	a second identical API call for what would otherwise be the exact same
+	booking number. Still re-fetches/re-resolves on its own (unchanged
+	behavior) when called without them, e.g. from a future manual backfill.
+
+	Only fires once per booking: `custom_otobitz_booking_number` is unique,
+	so a booking that already has a draft (or had one created by an
+	earlier sync pass) is skipped outright, no API call spent at all. Also
+	skipped - deliberately, not an error - once the booking's own `nomorso`
+	is set: that means OtoBitz has already converted it into a real Work
+	Order, which sync_service_orders.py's regular otoxpertsoandpart sync
+	will turn into the real, SUBMITTED Sales Order on its own (keyed by
+	that same number as `nomorwo`) - a draft here too would just be a
+	second, disconnected document for the same job. Likewise skipped for a
+	cancelled booking (`statusbatal` != "TIDAK BATAL").
+
+	This is a forward-looking plan only, built once, from whatever OtoBitz
+	reports as planned at the moment of the first advance payment - it is
+	NOT kept in sync with the booking afterwards, and is NOT automatically
+	linked to or reconciled against the real Sales Order once one exists.
+	Both documents end up independently real (the draft stays a Draft,
+	untouched); treating them as the same job is left to whoever reviews
+	them.
+
+	Never raises - any failure here (the detail lookup itself, an
+	unresolvable part code, a bad Customer) is logged and swallowed rather
+	than rolling back the Payment Entry _sync_one_booking() just created
+	right before calling this."""
+	if frappe.db.exists("Sales Order", {"custom_otobitz_booking_number": allocation_ref}):
+		return None
+	try:
+		if detail is None:
+			detail = _fetch_booking_detail(allocation_ref)
+		if not detail:
+			return None
+		if clean(detail.get("nomorso")):
+			return None
+		if (detail.get("statusbatal") or "").strip().upper() != "TIDAK BATAL":
+			return None
+
+		if not customer:
+			customer = _resolve_booking_customer(detail)
+		if not customer:
+			return None
+
+		item_rows, unresolved_item_codes = _build_booking_item_rows(detail.get("detail") or [])
+		if not item_rows:
+			return None
+
+		company = frappe.db.get_single_value("OtoBitz Settings", "default_company")
+		booking_date = getdate(detail.get("tanggalbooking") or detail.get("tanggal") or nowdate())
+
+		so = frappe.new_doc("Sales Order")
+		so.customer = customer
+		so.company = company
+		so.transaction_date = booking_date
+		so.delivery_date = booking_date
+		so.custom_otobitz_booking_number = allocation_ref
+		so.custom_salesperson = IMOGIBOT_USER
+		set_period_fields(so, so.transaction_date)
+		# Same reasoning as sync_service_orders.py's own Sales Orders - this
+		# integration never creates a Delivery Note.
+		so.skip_delivery_note = 1
+		so.custom_plat_nomor = clean(detail.get("nopolisi"))
+		so.custom_keluhan = clean(detail.get("keluhan"))
+		so.custom_pengguna = clean(detail.get("nohppic"))
+		vehicle_type_code = clean(detail.get("kodetipe"))
+		if vehicle_type_code and frappe.db.exists("OtoBitz Vehicle Type", vehicle_type_code):
+			vehicle_type_info = frappe.db.get_value(
+				"OtoBitz Vehicle Type", vehicle_type_code, ["nama", "brand"], as_dict=True
+			)
+			if vehicle_type_info.nama:
+				so.custom_vehicle_type = vehicle_type_info.nama
+			if vehicle_type_info.brand:
+				so.custom_vehicle_manufacture = vehicle_type_info.brand
+
+		for item_row in item_rows:
+			so.append("items", item_row)
+
+		# Pins PPN/Pembulatan to this booking's own dpp/ppn/grandtotal, same
+		# as every other OtoBitz-sourced document here - see
+		# [[otobitz-trust-source-numbers]]. A part missing from the Item
+		# master (unresolved_item_codes) understates net_total the same
+		# known way _build_item_rows() itself documents; not re-guarded
+		# against here since this is a draft estimate, not a final invoice.
+		so.taxes_and_charges = TAXES_AND_CHARGES_TEMPLATE
+		so.set("taxes", [])
+		so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", TAXES_AND_CHARGES_TEMPLATE))
+		_pin_oto_taxes(so, detail, company)
+
+		so.insert(ignore_permissions=True, ignore_mandatory=True)
+		# Deliberately left as a Draft - unlike every other Sales Order this
+		# app creates (always submitted immediately): this is a plan, not
+		# yet a sale OtoBitz itself has committed to billing.
+		if unresolved_item_codes:
+			frappe.get_doc(
+				{
+					"doctype": "Comment",
+					"comment_type": "Info",
+					"reference_doctype": "Sales Order",
+					"reference_name": so.name,
+					"content": (
+						f"OtoBitz: booking {allocation_ref} - part belum ada di Item master, "
+						f"tidak ikut masuk ke draft ini: {', '.join(unresolved_item_codes)}"
+					),
+				}
+			).insert(ignore_permissions=True)
+		return so.name
+	except Exception:
+		frappe.log_error(title=f"OtoBitz sync: failed to draft Sales Order for booking {allocation_ref}")
+		return None
 
 
 @frappe.whitelist()
