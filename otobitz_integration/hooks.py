@@ -245,6 +245,7 @@ scheduler_events = {
 after_migrate = [
 	"otobitz_integration.install.reapply_fixtures",
 	"otobitz_integration.install.hide_desktop_icons",
+	"otobitz_integration.install.add_service_package_to_selling_workspace",
 ]
 
 # Fixtures
