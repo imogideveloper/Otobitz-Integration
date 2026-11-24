@@ -286,12 +286,23 @@ function sod_render_wo_summary(frm, use_cache) {
 		render(frm._sod_base_summary);
 		return;
 	}
-	if (frm._wo_summary_nomorwo === frm.doc.nomorwo && frm._sod_base_summary) return;
+	// Keyed on nofaktur too, not just nomorwo - this same WO can have more
+	// than one invoice attempt (a cancelled one plus whatever reissued it),
+	// each its own "OtoBitz SO Detail" page; caching on nomorwo alone would
+	// show whichever attempt's summary loaded first even after navigating
+	// to the other one.
+	if (
+		frm._wo_summary_nomorwo === frm.doc.nomorwo &&
+		frm._wo_summary_nofaktur === frm.doc.nofaktur &&
+		frm._sod_base_summary
+	)
+		return;
 	frm._wo_summary_nomorwo = frm.doc.nomorwo;
+	frm._wo_summary_nofaktur = frm.doc.nofaktur;
 
 	frappe.call({
 		method: "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_wo_summary",
-		args: { nomorwo: frm.doc.nomorwo },
+		args: { nomorwo: frm.doc.nomorwo, nofaktur: frm.doc.nofaktur },
 		callback(r) {
 			if (!r.message) return;
 			frm._sod_base_summary = r.message;

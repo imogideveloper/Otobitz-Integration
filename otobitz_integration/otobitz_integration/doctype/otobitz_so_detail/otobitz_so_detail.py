@@ -53,18 +53,35 @@ _HEADER_KEYS = [
 
 
 @frappe.whitelist()
-def get_wo_summary(nomorwo):
-	"""Join every OtoBitz SO Detail row sharing this Nomor WO back into one
-	Work Order: the shared header (customer, vehicle, payment, ...) plus the
-	full item list, with the three cross-checks a human would otherwise have
-	to do by eye - do the header fields actually agree across the rows, does
-	the item subtotal add up to the WO's own dpp, does item+tax add up to
-	grandtotal. Per-item subtotal+PPN comes straight from each row's own
-	subtotalppn (confirmed per-item, not a WO-level total); the WO's blended
-	tax rate (ppn/dpp) is only a fallback for the rare row missing it."""
+def get_wo_summary(nomorwo, nofaktur=None):
+	"""Join OtoBitz SO Detail item rows back into one Work Order: the shared
+	header (customer, vehicle, payment, ...) plus the full item list, with
+	the three cross-checks a human would otherwise have to do by eye - do
+	the header fields actually agree across the rows, does the item
+	subtotal add up to the WO's own dpp, does item+tax add up to grandtotal.
+	Per-item subtotal+PPN comes straight from each row's own subtotalppn
+	(confirmed per-item, not a WO-level total); the WO's blended tax rate
+	(ppn/dpp) is only a fallback for the rare row missing it.
+
+	`nofaktur`, when given, scopes this to ONE invoice attempt instead of
+	every row sharing this nomorwo - confirmed live, SO-302-261100180:
+	invoice SV-302-261100203 got cancelled and reissued as SV-302-261100204,
+	4 of its 5 item codes shared between them. Without this filter, viewing
+	EITHER invoice's own "OtoBitz SO Detail" page merged in the OTHER
+	invoice's items too - every shared item code double-counted, and the
+	cancelled invoice's page showed the reissued invoice's items instead of
+	its own (its own DPP/PPN/grandtotal came from a header-field overlay
+	already built for exactly this in otobitz_so_detail.js - see its own
+	comment there - but the Items table underneath still came from here,
+	unscoped, so the two never actually agreed with each other). Left
+	optional (not required) for any other caller still expecting every
+	attempt merged together."""
+	filters = {"nomorwo": nomorwo}
+	if nofaktur:
+		filters["nofaktur"] = nofaktur
 	rows = frappe.get_all(
 		"OtoBitz SO Detail",
-		filters={"nomorwo": nomorwo},
+		filters=filters,
 		fields=["name", "raw_data", "kodereferensi"],
 		order_by="creation asc",
 	)
