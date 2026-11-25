@@ -616,3 +616,111 @@ def backfill_split_booking_advances(from_date=None, to_date=None, dry_run=1) -> 
 	if not dry_run:
 		frappe.db.commit()
 	return report
+
+
+@frappe.whitelist()
+def backfill_draft_sales_orders_from_bookings(dry_run=1) -> dict:
+	"""One-off: retroactively builds the draft Sales Order
+	_create_draft_sales_order_from_booking() now creates automatically for
+	every NEW booking advance, for bookings whose Payment Entry already
+	existed before that feature shipped - confirmed live, 32 of 35
+	"penerimaanuangmukabooking" Payment Entries on production predate that
+	deploy and never got a chance to go through it even once, since the
+	regular sync loop only ever calls it the very first time a booking's
+	Payment Entry is created (see _sync_one_booking()'s own `if existing:
+	return False` guard, well before it ever reaches that call).
+
+	Only ever CREATES a draft where one doesn't already exist AND the
+	booking genuinely still has no real Work Order (`nomorso` still empty
+	at masterdata_bookingservicepernomor) - same gating
+	_create_draft_sales_order_from_booking() itself already applies on the
+	live path, so this can never produce a duplicate alongside an
+	already-converted booking's real Sales Order (confirmed live: both
+	BKS-112-261000041 and BKS-503-261100009 - retried via retry.py right
+	before this was written - were correctly skipped here for exactly that
+	reason, their real Sales Orders already existing from well before).
+
+	Paced with a cooldown between each masterdata_bookingservicepernomor
+	call (one per booking) - same reasoning as
+	backfill_split_booking_advances()'s own cooldown above, to avoid
+	hammering OtoBitz's API in one burst.
+
+	Passes the Payment Entry's own `party` as `customer` straight into
+	_create_draft_sales_order_from_booking() - that Payment Entry already
+	exists, meaning ITS OWN customer resolution (whichever path it went
+	through - nomor_customer, the converted-WO fallback, or even the old
+	name-match, all now-historical for an already-synced record) already
+	succeeded once; reusing it here is more reliable than asking this
+	booking's own detail lookup to resolve a customer completely from
+	scratch a second time, and is never wrong - the Payment Entry and its
+	own draft Sales Order describe the very same booking.
+
+	dry_run=1 (default): reports what it WOULD do, writes nothing - review
+	this first. dry_run=0: actually creates the missing drafts."""
+	frappe.only_for("System Manager")
+	dry_run = cint(dry_run)
+
+	cooldown = frappe.db.get_single_value("OtoBitz Settings", "light_endpoint_cooldown_seconds") or 20
+
+	pes = frappe.get_all(
+		"Payment Entry",
+		filters={
+			"custom_otobitz_endpoint": "penerimaanuangmukabooking",
+			"custom_otobitz_receipt_number": ["is", "set"],
+		},
+		fields=["name", "custom_otobitz_receipt_number", "party"],
+		order_by="creation asc",
+	)
+
+	report = {
+		"dry_run": bool(dry_run),
+		"total_bookings": len(pes),
+		"already_has_draft": 0,
+		"already_converted_to_wo": 0,
+		"cancelled": 0,
+		"lookup_failed": 0,
+		"would_create": 0,
+		"created": 0,
+		"errors": [],
+		"details": [],
+	}
+
+	checked = 0
+	for pe in pes:
+		allocation_ref = pe.custom_otobitz_receipt_number
+		if frappe.db.exists("Sales Order", {"custom_otobitz_booking_number": allocation_ref}):
+			report["already_has_draft"] += 1
+			continue
+
+		if checked:
+			time.sleep(cooldown)
+		checked += 1
+		detail = _fetch_booking_detail(allocation_ref)
+		if not detail:
+			report["lookup_failed"] += 1
+			report["details"].append({"allocation_ref": allocation_ref, "action": "lookup_failed"})
+			continue
+
+		if clean(detail.get("nomorso")):
+			report["already_converted_to_wo"] += 1
+			continue
+
+		if (detail.get("statusbatal") or "").strip().upper() != "TIDAK BATAL":
+			report["cancelled"] += 1
+			continue
+
+		report["would_create"] += 1
+		report["details"].append({"allocation_ref": allocation_ref, "action": "create", "customer": pe.party})
+		if not dry_run:
+			try:
+				so_name = _create_draft_sales_order_from_booking(allocation_ref, detail=detail, customer=pe.party)
+				frappe.db.commit()
+				if so_name:
+					report["created"] += 1
+				else:
+					report["errors"].append(f"{allocation_ref}: returned None - check Error Log")
+			except Exception as exc:
+				frappe.db.rollback()
+				report["errors"].append(f"{allocation_ref}: {exc}")
+
+	return report
