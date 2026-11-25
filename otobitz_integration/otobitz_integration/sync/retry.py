@@ -30,7 +30,7 @@ from otobitz_integration.otobitz_integration.sync.sync_penerimaan import _sync_o
 from otobitz_integration.otobitz_integration.sync.sync_service_orders import _sync_one_wo
 
 
-def _retry_one_booking(allocation_ref: str, row: dict) -> bool:
+def _retry_one_booking(record_key: str, row: dict) -> bool:
 	"""_sync_one_booking() needs a 3rd positional arg (`nomor`, the shared
 	receipt number one `nomor` can split across several bookings/vehicles -
 	see sync_booking.py's own module docstring) that every other endpoint's
@@ -41,8 +41,26 @@ def _retry_one_booking(allocation_ref: str, row: dict) -> bool:
 	`nomor` is always inside `row` too (`row.get("nomor")` - same place the
 	original sync loop in sync_booking.py reads it from), so it doesn't need
 	its own column on "OtoBitz Failed Sync" - just re-derived here the same
-	way."""
+	way.
+
+	`allocation_ref` is ALSO re-derived from `row.get("noreferensi")` here -
+	NOT trusted from `record_key` (the caller's own `doc.record_key`) -
+	confirmed live: two "Customer tidak ditemukan" rows that have sat in this
+	queue since before the per-booking noreferensi-keying fix (see
+	sync_booking.py's own module docstring) still carry their OLD key, the
+	shared receipt `nomor` ("112-IB261000011"/"503-IR261100041"), even though
+	their own stored `raw_data` already has a real `noreferensi`
+	("BKS-112-261000041"/"BKS-503-261100009"). Retrying with the stale
+	`record_key` as allocation_ref fed masterdata_bookingservicepernomor a
+	receipt number instead of a real booking number (confirmed to return
+	"Data not found" for that shape of input), silently falling back to the
+	old free-text name match - which is exactly the failure these two rows
+	were stuck on in the first place, so retrying them kept reproducing the
+	same error forever. Recomputing it fresh from the row's own data, the
+	same way the live sync loop itself does, self-heals any such
+	already-queued stale key regardless of how old it is."""
 	nomor = clean(row.get("nomor"))
+	allocation_ref = clean(row.get("noreferensi")) or nomor
 	return _sync_one_booking(allocation_ref, nomor, row)
 
 

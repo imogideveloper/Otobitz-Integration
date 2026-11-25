@@ -174,6 +174,16 @@ def _sync_one_booking(allocation_ref: str, nomor: str, row: dict) -> bool:
 	# own old name-match, same as before this existed.
 	booking_detail = _fetch_booking_detail(allocation_ref)
 	resolved_customer = _resolve_booking_customer(booking_detail) if booking_detail else None
+	# Second fallback, before the old name-match - confirmed live, booking
+	# BKS-503-261100009 has no nomor_customer at all from this endpoint AND
+	# its own namacustomer is a typo'd variant ("SAID HADI" vs the real
+	# "SAID ADI") that free-text matching could never catch either - but
+	# OtoBitz had already converted this same booking into a real Work Order
+	# (nomorso set), which sync_service_orders.py's own _resolve_customer()
+	# already resolved correctly (keyed by the WO's own customerid, not this
+	# endpoint's name) by the time that WO synced.
+	if not resolved_customer and booking_detail:
+		resolved_customer = _resolve_customer_via_converted_wo(clean(booking_detail.get("nomorso")))
 
 	_create_advance_payment_entry(allocation_ref, nomor, row, customer_override=resolved_customer)
 	# Best-effort, never fatal to this booking's Payment Entry - see that
@@ -290,6 +300,22 @@ def _resolve_booking_customer(detail: dict) -> str | None:
 	}
 	name, _, _ = upsert("Customer", {"custom_otobitz_customer_id": customer_code}, values, ignore_mandatory=True)
 	return name
+
+
+def _resolve_customer_via_converted_wo(nomorso: str | None) -> str | None:
+	"""Last-resort Customer fallback, after _resolve_booking_customer() above
+	comes up empty (no nomor_customer at all from masterdata_bookingservicepernomor)
+	- if OtoBitz already converted this booking into a real Work Order
+	(`nomorso` set), sync_service_orders.py's own _resolve_customer() already
+	resolved the correct Customer for it there, keyed by the WO's own
+	customerid rather than this endpoint's free-text name. Confirmed live:
+	booking BKS-503-261100009 has no nomor_customer AND its own namacustomer
+	is a typo'd variant ("SAID HADI") that free-text matching could never
+	catch either, while its already-synced Sales Order (SO-503-261100140) is
+	correctly linked to Customer "SAID ADI"."""
+	if not nomorso:
+		return None
+	return frappe.db.get_value("Sales Order", {"custom_otobitz_wo_number": nomorso}, "customer")
 
 
 def _build_booking_item_rows(detail_rows: list) -> tuple[list[dict], list[str]]:
