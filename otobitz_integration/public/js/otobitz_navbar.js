@@ -738,4 +738,15 @@
 	// the dependency on any particular Frappe event firing in a particular
 	// order.
 	setInterval(injectOrRemove, 1000);
+
+	// Exposed so otobitz_so_draft_list.js (a separate, Desk-wide List View
+	// override - see that file's own docstring) can show this SAME dialog
+	// for a draft booking row opened from the real Sales Order List View
+	// ("Lihat semua" from this workspace's own embedded table, or any other
+	// path into that List View) instead of duplicating this whole function.
+	// This whole IIFE runs on every Desk page regardless of route (only the
+	// navbar injection itself is scoped to the workspace route - see
+	// isWorkspaceRoute()), so this global is always set by the time any
+	// other page's click handler needs it.
+	window.otobitzShowSalesOrderDraftDialog = showSalesOrderDraftDialog;
 })();
