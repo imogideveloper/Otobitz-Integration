@@ -88,6 +88,10 @@ def get_blocked_menus(user: str | None = None) -> frozenset[str]:
 		return local_cache[user]
 
 	def load():
+		# The Custom Field may not exist yet (e.g. fixtures not synced after a deploy): no blocks then,
+		# instead of an "Unknown column" error on every permission check.
+		if not frappe.get_meta("User").has_field(FIELD):
+			return []
 		return parse(frappe.db.get_value("User", user, FIELD))
 
 	blocked = frozenset(frappe.cache.hget(CACHE_KEY, user, load) or [])
@@ -125,6 +129,14 @@ def extend_bootinfo(bootinfo):
 	"""Hide blocked DocTypes from the desk: permission lists and the module sidebar.
 	Runs on every desk load (after the cached part of the boot), so a block shows up
 	on the user's next page load."""
+	try:
+		_hide_blocked(bootinfo)
+	except Exception:
+		# A fault here must never stop the desk from loading.
+		frappe.log_error(title="otobitz menu_block.extend_bootinfo")
+
+
+def _hide_blocked(bootinfo):
 	blocked = get_blocked_menus() - PROTECTED
 	if not blocked:
 		return
