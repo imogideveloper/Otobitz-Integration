@@ -253,8 +253,10 @@ label.switch-control:has(input:disabled) > .switch-visual {
 }
 
 /* Employee list: every column as wide as its longest value (measured, Inter 14px), so nothing is cut ("...") and
-   the whole row fits on one screen. Branch/Department texts are shortened by employee_list.js. Full Name takes the
-   room left over. Also overrides imogi_finance.bundle.css, which hides columns by position (nth-child 4/6/8) -
+   the whole row fits on one screen. Branch/Department texts are shortened by employee_list.js. Room left over on a
+   wide screen is shared by Full Name, Branch, Designation and Department in proportion to their widths (flex-grow =
+   width), so the gaps stay even instead of one wide gap after the name (requested 2026-11-27).
+   Also overrides imogi_finance.bundle.css, which hides columns by position (nth-child 4/6/8) -
    written for an older column order, it hid Branch and Status. When the list is too narrow for every column
    (sidebar open on a laptop), only the Department is dropped, by name - never a horizontal scroll.
    Order comes from List View Settings: ID, Full Name, Branch, Designation, Department, Status. */
@@ -274,27 +276,27 @@ label.switch-control:has(input:disabled) > .switch-visual {
 	}
 	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis[data-fieldname="employee_name"]:nth-child(n) {
 		display: block !important;
-		flex: 1 0 220px !important;
+		flex: 220 0 220px !important;
 		min-width: 220px !important;
 		max-width: none !important;
 	}
 	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis[data-fieldname="branch"]:nth-child(n) {
 		display: block !important;
-		flex: 0 0 190px !important;
+		flex: 190 0 190px !important;
 		min-width: 190px !important;
-		max-width: 190px !important;
+		max-width: none !important;
 	}
 	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis[data-fieldname="designation"]:nth-child(n) {
 		display: block !important;
-		flex: 0 0 198px !important;
+		flex: 198 0 198px !important;
 		min-width: 198px !important;
-		max-width: 198px !important;
+		max-width: none !important;
 	}
 	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis[data-fieldname="department"]:nth-child(n) {
 		display: block !important;
-		flex: 0 0 303px !important;
+		flex: 303 0 303px !important;
 		min-width: 303px !important;
-		max-width: 303px !important;
+		max-width: none !important;
 	}
 	/* Status (indicator column, no data-fieldname, always last) */
 	[data-page-route="List/Employee/List"] .frappe-list :is(.list-row, .list-row-head) > .level-left > .list-row-col.ellipsis:last-child:not([data-fieldname]) {

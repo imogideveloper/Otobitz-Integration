@@ -111,17 +111,27 @@ def get_workspace_access_map() -> dict[str, dict]:
 	# exactly that) meant toggling a doctype's access never changed what
 	# this preview showed, no matter how many times it was flipped, since
 	# the toggle was never touching the table being read from.
-	custom_rows = frappe.get_all("Custom DocPerm", fields=["parent", "role", "read"])
-	base_rows = frappe.get_all("DocPerm", fields=["parent", "role", "read"])
+	custom_rows = frappe.get_all("Custom DocPerm", fields=["parent", "role", "read", "permlevel"])
+	base_rows = frappe.get_all("DocPerm", fields=["parent", "role", "read", "permlevel"])
 
+	# Only permlevel 0 decides whether a DocType can be opened at all - a
+	# permlevel 1+ row (e.g. "All" on Request for Quotation, "Desk User" on
+	# Lead) only reveals extra fields to someone who can already open it, same
+	# as frappe.permissions.get_doctypes_with_read(). Counting those made the
+	# preview claim access the user doesn't really have.
 	custom_doctypes = {row.parent for row in custom_rows}
 	roles_by_doctype: dict[str, set[str]] = {}
 	for row in base_rows:
-		if row.read and row.parent not in custom_doctypes:
+		if row.read and not row.permlevel and row.parent not in custom_doctypes:
 			roles_by_doctype.setdefault(row.parent, set()).add(row.role)
 	for row in custom_rows:
-		if row.read:
+		if row.read and not row.permlevel:
 			roles_by_doctype.setdefault(row.parent, set()).add(row.role)
+
+	# Workspace links can point at DocTypes that aren't installed on this
+	# site (Energy Point Log, Blog Post, Upload Attendance, ...) - they can't
+	# be opened by anyone, so they're left out instead of shown as a menu.
+	existing_doctypes = set(frappe.get_all("DocType", pluck="name"))
 
 	workspaces = frappe.get_all(
 		"Workspace", filters={"public": 1, "is_hidden": 0}, fields=["name", "title"], order_by="title"
@@ -140,7 +150,7 @@ def get_workspace_access_map() -> dict[str, dict]:
 		seen_doctypes = set()
 		for row in link_rows:
 			doctype = row.link_to
-			if not doctype or doctype in seen_doctypes:
+			if not doctype or doctype in seen_doctypes or doctype not in existing_doctypes:
 				continue
 			seen_doctypes.add(doctype)
 			links.append(

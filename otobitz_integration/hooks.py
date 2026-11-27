@@ -26,7 +26,7 @@ required_apps = ["frappe/erpnext"]
 
 # include js, css files in header of desk.html
 app_include_css = [
-	"/assets/otobitz_integration/css/desk.css?v=21",
+	"/assets/otobitz_integration/css/desk.css?v=22",
 	"/assets/otobitz_integration/css/otobitz_report_financial.css?v=13",
 ]
 # The query string is a manual cache-buster: app_include_js isn't routed
@@ -164,11 +164,17 @@ after_app_install = "otobitz_integration.install.after_app_install"
 
 permission_query_conditions = {
 	"OtoBitz SO Detail": "otobitz_integration.otobitz_integration.doctype.otobitz_so_detail.otobitz_so_detail.get_permission_query_conditions",
+	# Per-user menu blocks: a blocked DocType lists nothing for that user (menu_block.py)
+	"*": "otobitz_integration.menu_block.permission_query_conditions",
 }
 
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
+# Per-user menu blocks: documents of a blocked DocType can't be opened (menu_block.py)
+has_permission = {
+	"*": "otobitz_integration.menu_block.has_permission",
+}
 
 # Document Events
 # ---------------
@@ -224,8 +230,19 @@ doc_events = {
 			"otobitz_integration.purchase_invoice.populate_journal_items"
 		],
 		"on_cancel": "otobitz_integration.purchase_order.on_purchase_invoice"
-	}
+	},
+	# Per-user menu blocks (menu_block.py)
+	"User": {
+		"validate": "otobitz_integration.menu_block.validate_user",
+		"on_update": [
+			"otobitz_integration.menu_block.clear_user_cache",
+			"otobitz_integration.menu_block.sync_granted_menus",
+		],
+	},
 }
+
+# Per-user menu blocks: hide blocked DocTypes from the desk (menu_block.py)
+extend_bootinfo = "otobitz_integration.menu_block.extend_bootinfo"
 
 # Scheduled Tasks
 # ---------------
